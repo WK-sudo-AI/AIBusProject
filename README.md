@@ -7,6 +7,7 @@ Projekty ze studiów podyplomowych Biznes.AI (Akademia Leona Koźmińskiego). Ka
 | Planer ROI | [`planer-roi/`](planer-roi/) | Planer budżetu marketingowego: podział budżetu na kanały, ROI, zwrot brutto, zapis planu w przeglądarce. |
 | Analizator sprzedaży | [`analizator-sprzedazy/`](analizator-sprzedazy/) | Analiza arkusza sprzedaży z pliku .xlsx, CSV lub wklejki: KPI, trendy, rabaty, tabela przestawna, kontrola formuł i raport PDF. |
 | Prawnik AI | [`prawnik-ai/`](prawnik-ai/) | Przegląd umów z pomocą AI: zakreślanie ryzyk prawnych w tekście, ocena wagi, podstawa prawna i proponowane brzmienie zapisów. |
+| Generator Postów | [`generator-postow/`](generator-postow/) | Posty na LinkedIn, Facebook, Instagram, X, Threads, TikTok i YouTube Shorts z wklejonego tekstu, generowane przez Google Gemini z kluczem API użytkownika. |
 
 ## Zasady porządku
 

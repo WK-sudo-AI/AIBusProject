@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Generator Postów</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: dwie kolumny — "biurko redakcyjne" z materiałem źródłowym po lewej, gotowe posty po prawej */
+:root {
+  --bg: #F3F5F6;
+  --surface: #FFFFFF;
+  --ink: #15232B;
+  --muted: #5B6B74;
+  --line: #D9E0E3;
+  --accent: #0B6E78;
+  --accent-ink: #FFFFFF;
+  --accent-soft: #E1F0F1;
+  --warn: #B4541A;
+  --bad: #B3261E;
+  --good: #2E7D4F;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F171B; --surface: #172227; --ink: #E6EEF1; --muted: #93A4AC; --line: #2A3A41;
+    --accent: #4FB8C2; --accent-ink: #062126; --accent-soft: #163439;
+    --warn: #E39A62; --bad: #F2867E; --good: #74C795; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0F171B; --surface: #172227; --ink: #E6EEF1; --muted: #93A4AC; --line: #2A3A41;
+  --accent: #4FB8C2; --accent-ink: #062126; --accent-soft: #163439;
+  --warn: #E39A62; --bad: #F2867E; --good: #74C795; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 15px/1.55 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 48px;
+}
+.wrap { max-width: 1240px; margin: 0 auto; display: grid; gap: 24px; }
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; }
+h1 { font: 700 clamp(26px, 4vw, 36px)/1.1 var(--font-display); margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h1 span { color: var(--accent); }
+.lead { margin: 6px 0 0; color: var(--muted); max-width: 60ch; }
+h2 { font: 700 18px/1.2 var(--font-display); margin: 0; }
+.label { font: 600 11.5px/1 var(--font-body); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+
+.grid { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 900px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: grid; gap: 18px; min-width: 0; }
+.field { display: grid; gap: 7px; min-width: 0; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.row > .field { flex: 1 1 140px; }
+
+input[type=text], input[type=password], select, textarea {
+  width: 100%; font: inherit; color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 7px; padding: 9px 11px;
+}
+textarea { resize: vertical; min-height: 200px; line-height: 1.5; }
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, .chip:focus-within {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+.hint { font-size: 12.5px; color: var(--muted); margin: 0; }
+.hint a { color: var(--accent); }
+.counter { font: 12px var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.keybox { display: flex; gap: 8px; }
+.keybox input { flex: 1; font-family: var(--font-mono); font-size: 13px; }
+.status { font-size: 12.5px; display: flex; align-items: center; gap: 6px; min-height: 18px; }
+.status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--line); flex: none; }
+.status.ok { color: var(--good); } .status.ok::before { background: var(--good); }
+.status.err { color: var(--bad); } .status.err::before { background: var(--bad); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { position: relative; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; cursor: pointer; font-size: 13.5px; user-select: none; background: var(--bg); }
+.chip input { position: absolute; opacity: 0; pointer-events: none; }
+.chip:has(input:checked) { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); font-weight: 600; }
+.chip .lim { font: 11px var(--font-mono); color: var(--muted); }
+
+.toggles { display: grid; gap: 8px; }
+.toggles label { display: flex; gap: 8px; align-items: center; font-size: 14px; cursor: pointer; }
+.toggles input { accent-color: var(--accent); width: 16px; height: 16px; }
+
+button { font: 600 14px var(--font-body); border-radius: 7px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 8px 14px; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .55; cursor: not-allowed; }
+.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); padding: 12px 18px; font-size: 15px; width: 100%; }
+.primary:hover:not(:disabled) { filter: brightness(1.08); }
+.small { padding: 6px 10px; font-size: 12.5px; }
+
+.out-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 16px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; display: grid; grid-template-rows: auto 1fr auto; min-width: 0; }
+.card-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.card-top h3 { font: 700 16px var(--font-display); margin: 0; }
+.pill { font: 500 11.5px var(--font-mono); padding: 3px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pill.over { background: transparent; border: 1px solid var(--bad); color: var(--bad); }
+.card-body { padding: 14px 16px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.post { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; font-size: 14.5px; }
+.post[contenteditable="true"] { outline: none; border-radius: 4px; }
+.post[contenteditable="true"]:focus { box-shadow: 0 0 0 2px var(--accent-soft); }
+.tags { color: var(--accent); font-size: 13.5px; overflow-wrap: anywhere; margin: 0; }
+.tip { font-size: 13px; color: var(--muted); border-left: 2px solid var(--line); padding-left: 10px; margin: 0; white-space: pre-wrap; }
+.tip b { color: var(--ink); font-weight: 600; }
+.card-actions { display: flex; gap: 8px; padding: 10px 16px 14px; flex-wrap: wrap; }
+
+.empty { border: 1px dashed var(--line); border-radius: 10px; padding: 36px 24px; text-align: center; color: var(--muted); display: grid; gap: 8px; justify-items: center; }
+.empty h3 { font: 700 18px var(--font-display); color: var(--ink); margin: 0; }
+.error { border: 1px solid var(--bad); color: var(--bad); border-radius: 8px; padding: 12px 14px; font-size: 14px; background: var(--surface); }
+.skeleton { height: 220px; border-radius: 10px; background: linear-gradient(90deg, var(--surface) 0%, var(--accent-soft) 50%, var(--surface) 100%); background-size: 200% 100%; animation: shimmer 1.3s linear infinite; border: 1px solid var(--line); }
+@keyframes shimmer { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 9px 16px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Generator <span>Postów</span></h1>
+      <p class="lead">Wklej tekst źródłowy — artykuł, notatkę, ogłoszenie — a Gemini przygotuje gotowe wersje pod wybrane media społecznościowe.</p>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- LEWA KOLUMNA: ustawienia -->
+    <form class="panel" id="form" autocomplete="off">
+      <div class="field">
+        <label class="label" for="apiKey">Klucz Google Gemini API</label>
+        <div class="keybox">
+          <input type="password" id="apiKey" placeholder="AIza…" spellcheck="false">
+          <button type="button" class="small" id="toggleKey" aria-label="Pokaż klucz">Pokaż</button>
+          <button type="button" class="small" id="testKey">Sprawdź</button>
+        </div>
+        <div class="status" id="keyStatus">Klucz nie został jeszcze sprawdzony</div>
+        <div class="toggles"><label><input type="checkbox" id="rememberKey"> Zapamiętaj klucz w tej przeglądarce</label></div>
+        <p class="hint">Klucz wygenerujesz w <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>. Trafia wyłącznie do API Google, bezpośrednio z Twojej przeglądarki.</p>
+      </div>
+
+      <div class="field">
+        <div class="row" style="justify-content:space-between">
+          <label class="label" for="source">Tekst źródłowy</label>
+          <span class="counter" id="srcCount">0 znaków</span>
+        </div>
+        <textarea id="source" placeholder="Wklej tutaj tekst…"></textarea>
+      </div>
+
+      <fieldset class="field" style="border:0;padding:0;margin:0">
+        <legend class="label" style="margin-bottom:8px">Platformy</legend>
+        <div class="chips" id="platforms"></div>
+      </fieldset>
+
+      <div class="row">
+        <div class="field">
+          <label class="label" for="tone">Ton</label>
+          <select id="tone">
+            <option>profesjonalny</option>
+            <option>ekspercki</option>
+            <option>przyjazny</option>
+            <option>inspirujący</option>
+            <option>luźny z humorem</option>
+            <option>sprzedażowy</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="label" for="lang">Język</label>
+          <select id="lang">
+            <option value="polski">Polski</option>
+            <option value="angielski">English</option>
+            <option value="niemiecki">Deutsch</option>
+            <option value="hiszpański">Español</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="label" for="audience">Grupa docelowa <span style="text-transform:none;letter-spacing:0;font-weight:400">(opcjonalnie)</span></label>
+        <input type="text" id="audience" placeholder="np. menedżerowie IT, właściciele małych firm">
+      </div>
+
+      <div class="field">
+        <label class="label" for="cta">Wezwanie do działania <span style="text-transform:none;letter-spacing:0;font-weight:400">(opcjonalnie)</span></label>
+        <input type="text" id="cta" placeholder="np. Zapisz się na webinar – link w komentarzu">
+      </div>
+
+      <div class="toggles">
+        <label><input type="checkbox" id="emoji" checked> Używaj emoji</label>
+        <label><input type="checkbox" id="hashtags" checked> Dodawaj hashtagi</label>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label class="label" for="model">Model</label>
+          <input type="text" id="model" list="models" value="gemini-2.5-flash" spellcheck="false">
+          <datalist id="models">
+            <option value="gemini-2.5-flash">
+            <option value="gemini-2.5-flash-lite">
+            <option value="gemini-2.5-pro">
+          </datalist>
+        </div>
+        <div class="field">
+          <label class="label" for="temp">Kreatywność: <span id="tempVal">0.8</span></label>
+          <input type="range" id="temp" min="0" max="1.5" step="0.1" value="0.8" style="accent-color:var(--accent)">
+        </div>
+      </div>
+
+      <button type="submit" class="primary" id="generate">Generuj posty</button>
+    </form>
+
+    <!-- PRAWA KOLUMNA: wyniki -->
+    <section class="field" style="gap:16px" aria-live="polite">
+      <div class="out-head">
+        <h2>Gotowe posty</h2>
+        <button type="button" class="small" id="copyAll" hidden>Kopiuj wszystko</button>
+      </div>
+      <div id="error" class="error" hidden></div>
+      <div id="output">
+        <div class="empty">
+          <h3>Tu pojawią się Twoje posty</h3>
+          <p class="hint" style="max-width:44ch">Podaj klucz API, wklej tekst i wybierz platformy. Każdy post dostanie licznik znaków względem limitu platformy, a tekst możesz poprawić bezpośrednio w karcie.</p>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
+
+const PLATFORMS = [
+  { id: "linkedin", name: "LinkedIn", limit: 3000, on: true,
+    guide: "Profesjonalny ton dopasowany do ustawień. Mocny hook w pierwszych dwóch liniach (przed 'zobacz więcej'). Krótkie akapity oddzielone pustą linią, ewentualnie lista punktów. Długość 900–1800 znaków. Zakończ pytaniem angażującym. 3–5 hashtagów." },
+  { id: "facebook", name: "Facebook", limit: 2000, on: true,
+    guide: "Rozmowny, przystępny ton. 300–700 znaków. Zachęta do komentarza lub udostępnienia. 1–3 hashtagi." },
+  { id: "instagram", name: "Instagram", limit: 2200, on: true,
+    guide: "Opis pod post. Hook w pierwszej linii, krótkie akapity, CTA na końcu. 8–15 hashtagów (tylko w polu hashtagi). We wskazówce zaproponuj koncepcję grafiki lub karuzeli (slajd po slajdzie)." },
+  { id: "x", name: "X", limit: 280, on: true,
+    guide: "Tekst razem z hashtagami MUSI zmieścić się w 270 znakach. Maksymalnie 2 hashtagi. Konkretna, wyrazista puenta. We wskazówce zaproponuj ewentualny wątek (thread) 3–5 wpisów." },
+  { id: "threads", name: "Threads", limit: 500, on: false,
+    guide: "Luźny, osobisty ton. Do 450 znaków. Maksymalnie 1 hashtag. Zaproszenie do dyskusji." },
+  { id: "tiktok", name: "TikTok", limit: 2200, on: false,
+    guide: "Pole tekst to scenariusz wideo 30–45 s z oznaczeniami [HOOK 0–3 s], [ROZWINIĘCIE], [CTA] oraz podpowiedziami, co pokazać na ekranie. We wskazówce podaj krótki opis pod wideo (do 150 znaków). 3–5 hashtagów." },
+  { id: "youtube", name: "YouTube Shorts", limit: 1000, on: false,
+    guide: "Pole tekst: tytuł (do 70 znaków) w pierwszej linii, pusta linia, opis 2–4 zdania. We wskazówce podaj scenariusz 30 s w punktach. 3 hashtagi." }
+];
+
+const $ = (id) => document.getElementById(id);
+const els = {
+  key: $("apiKey"), remember: $("rememberKey"), keyStatus: $("keyStatus"),
+  source: $("source"), srcCount: $("srcCount"), platforms: $("platforms"),
+  tone: $("tone"), lang: $("lang"), audience: $("audience"), cta: $("cta"),
+  emoji: $("emoji"), hashtags: $("hashtags"), model: $("model"), temp: $("temp"),
+  tempVal: $("tempVal"), generate: $("generate"), output: $("output"),
+  error: $("error"), copyAll: $("copyAll"), toast: $("toast")
+};
+
+const SAMPLE = `Od 1 grudnia uruchamiamy w naszej firmie program "AI na co dzień" – 8-tygodniowy cykl warsztatów dla wszystkich działów. Każdy pracownik nauczy się, jak bezpiecznie korzystać z asystentów AI do pisania maili, streszczania dokumentów i analizy danych w Excelu. Pilotaż w dziale finansów pokazał, że zespół oszczędzał średnio 4 godziny tygodniowo na osobę. Zapisy ruszają w przyszły poniedziałek, liczba miejsc w pierwszej edycji jest ograniczona do 120 osób.`;
+
+let lastResults = {};
+
+// ---------- pamięć przeglądarki (bezpiecznie) ----------
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} }
+};
+
+// ---------- inicjalizacja ----------
+function init() {
+  PLATFORMS.forEach(p => {
+    const label = document.createElement("label");
+    label.className = "chip";
+    label.innerHTML = `<input type="checkbox" id="pl-${p.id}" value="${p.id}" ${p.on ? "checked" : ""}>${p.name}<span class="lim">${p.limit}</span>`;
+    els.platforms.appendChild(label);
+  });
+
+  const savedKey = store.get("gp_api_key");
+  if (savedKey) { els.key.value = savedKey; els.remember.checked = true; setStatus("Klucz wczytany z tej przeglądarki", ""); }
+
+  els.source.value = store.get("gp_draft") || SAMPLE;
+  updateCount();
+
+  els.source.addEventListener("input", () => { updateCount(); store.set("gp_draft", els.source.value); });
+  els.temp.addEventListener("input", () => els.tempVal.textContent = Number(els.temp.value).toFixed(1));
+  els.remember.addEventListener("change", persistKey);
+  els.key.addEventListener("input", () => { persistKey(); setStatus("Klucz nie został jeszcze sprawdzony", ""); });
+  $("toggleKey").addEventListener("click", (e) => {
+    const show = els.key.type === "password";
+    els.key.type = show ? "text" : "password";
+    e.target.textContent = show ? "Ukryj" : "Pokaż";
+  });
+  $("testKey").addEventListener("click", testKey);
+  $("form").addEventListener("submit", (e) => { e.preventDefault(); generate(); });
+  els.copyAll.addEventListener("click", copyAll);
+}
+
+function updateCount() { els.srcCount.textContent = `${els.source.value.length} znaków`; }
+function persistKey() { els.remember.checked && els.key.value.trim() ? store.set("gp_api_key", els.key.value.trim()) : store.del("gp_api_key"); }
+function setStatus(text, cls) { els.keyStatus.textContent = text; els.keyStatus.className = "status " + cls; }
+function showError(msg) { els.error.textContent = msg; els.error.hidden = !msg; }
+function toast(msg) { els.toast.textContent = msg; els.toast.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => els.toast.classList.remove("show"), 1800); }
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+// ---------- API ----------
+async function callApi(path, options = {}) {
+  const key = els.key.value.trim();
+  if (!key) throw new Error("Podaj klucz Google Gemini API.");
+  let res;
+  try {
+    res = await fetch(`${API_BASE}/${path}`, {
+      ...options,
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key, ...(options.headers || {}) }
+    });
+  } catch {
+    throw new Error("Brak połączenia z API Google. Sprawdź internet lub czy przeglądarka nie blokuje żądania.");
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const apiMsg = data?.error?.message || res.statusText;
+    if (res.status === 400 && /api key/i.test(apiMsg)) throw new Error("Klucz API jest nieprawidłowy. Skopiuj go ponownie z Google AI Studio.");
+    if (res.status === 403) throw new Error("Klucz nie ma dostępu do Gemini API. Włącz „Generative Language API” w projekcie Google Cloud.");
+    if (res.status === 404) throw new Error(`Model „${els.model.value}” nie istnieje lub jest niedostępny. Wybierz inny model.`);
+    if (res.status === 429) throw new Error("Przekroczono limit zapytań dla tego klucza. Odczekaj chwilę i spróbuj ponownie.");
+    throw new Error(`Błąd API (${res.status}): ${apiMsg}`);
+  }
+  return data;
+}
+
+async function testKey() {
+  setStatus("Sprawdzam…", "");
+  try {
+    const data = await callApi("models?pageSize=50");
+    const n = (data.models || []).filter(m => (m.supportedGenerationMethods || []).includes("generateContent")).length;
+    setStatus(`Klucz działa · dostępnych modeli: ${n}`, "ok");
+  } catch (e) { setStatus(e.message, "err"); }
+}
+
+function selectedPlatforms() {
+  return PLATFORMS.filter(p => $(`pl-${p.id}`).checked);
+}
+
+function buildPrompt(platforms) {
+  const s = {
+    tone: els.tone.value, lang: els.lang.value,
+    audience: els.audience.value.trim(), cta: els.cta.value.trim(),
+    emoji: els.emoji.checked, hashtags: els.hashtags.checked
+  };
+  const system = `Jesteś doświadczonym copywriterem i strategiem social media. Na podstawie tekstu źródłowego tworzysz natywne posty dopasowane do specyfiki każdej platformy (długość, struktura, styl, zwyczaje odbiorców). Nie wymyślaj faktów, liczb ani cytatów, których nie ma w źródle. Każdy post ma mieć inny hook – nie kopiuj tych samych zdań między platformami. Odpowiadasz wyłącznie w formacie JSON zgodnym ze schematem.`;
+
+  const rules = platforms.map(p => `- ${p.name} (klucz "${p.id}", limit ${p.limit} znaków): ${p.guide}`).join("\n");
+  const user = `USTAWIENIA:
+- Język postów: ${s.lang}
+- Ton: ${s.tone}
+- Grupa docelowa: ${s.audience || "nie określono – dobierz na podstawie treści"}
+- Wezwanie do działania: ${s.cta || "dobierz naturalne CTA na podstawie treści"}
+- Emoji: ${s.emoji ? "tak, z umiarem, jako akcenty" : "NIE używaj emoji"}
+- Hashtagi: ${s.hashtags ? "tak, w polu 'hashtagi' (bez znaku # w tekście posta)" : "NIE – zwróć pustą listę hashtagów"}
+
+WYTYCZNE DLA PLATFORM:
+${rules}
+
+Pole "hashtagi" zawiera słowa ze znakiem #. Pole "wskazowka" zawiera krótką praktyczną radę publikacyjną (najlepsza pora, format, grafika) – zgodnie z wytycznymi platformy.
+
+TEKST ŹRÓDŁOWY:
+"""
+${els.source.value.trim()}
+"""`;
+  return { system, user };
+}
+
+function buildSchema(platforms) {
+  const post = {
+    type: "OBJECT",
+    properties: {
+      tekst: { type: "STRING" },
+      hashtagi: { type: "ARRAY", items: { type: "STRING" } },
+      wskazowka: { type: "STRING" }
+    },
+    required: ["tekst", "hashtagi", "wskazowka"]
+  };
+  const properties = {};
+  platforms.forEach(p => properties[p.id] = post);
+  return { type: "OBJECT", properties, required: platforms.map(p => p.id) };
+}
+
+async function requestPosts(platforms) {
+  const { system, user } = buildPrompt(platforms);
+  const model = els.model.value.trim() || "gemini-2.5-flash";
+  const data = await callApi(`models/${encodeURIComponent(model)}:generateContent`, {
+    method: "POST",
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: "user", parts: [{ text: user }] }],
+      generationConfig: {
+        temperature: Number(els.temp.value),
+        responseMimeType: "application/json",
+        responseSchema: buildSchema(platforms)
+      }
+    })
+  });
+  const cand = data.candidates?.[0];
+  if (!cand) {
+    const reason = data.promptFeedback?.blockReason;
+    throw new Error(reason ? `Google zablokował zapytanie (${reason}). Zmień treść źródłową.` : "Model nie zwrócił odpowiedzi. Spróbuj ponownie.");
+  }
+  if (cand.finishReason === "SAFETY") throw new Error("Odpowiedź zablokowana przez filtry bezpieczeństwa Google.");
+  const text = (cand.content?.parts || []).filter(p => !p.thought).map(p => p.text || "").join("");
+  try { return JSON.parse(text); }
+  catch { throw new Error(cand.finishReason === "MAX_TOKENS" ? "Odpowiedź została ucięta. Wybierz mniej platform lub skróć tekst." : "Nie udało się odczytać odpowiedzi modelu. Spróbuj ponownie."); }
+}
+
+// ---------- generowanie ----------
+async function generate() {
+  showError("");
+  const platforms = selectedPlatforms();
+  if (!els.key.value.trim()) return showError("Podaj klucz Google Gemini API w lewym panelu.");
+  if (els.source.value.trim().length < 20) return showError("Wklej dłuższy tekst źródłowy (co najmniej 20 znaków).");
+  if (!platforms.length) return showError("Wybierz co najmniej jedną platformę.");
+
+  els.generate.disabled = true; els.generate.textContent = "Generuję…";
+  els.copyAll.hidden = true;
+  els.output.innerHTML = `<div class="cards">${platforms.map(() => '<div class="skeleton"></div>').join("")}</div>`;
+  try {
+    const result = await requestPosts(platforms);
+    lastResults = {};
+    platforms.forEach(p => { if (result[p.id]) lastResults[p.id] = result[p.id]; });
+    render();
+    setStatus("Klucz działa", "ok");
+  } catch (e) {
+    showError(e.message);
+    render();
+  } finally {
+    els.generate.disabled = false; els.generate.textContent = "Generuj posty";
+  }
+}
+
+async function regenerate(id, btn) {
+  const p = PLATFORMS.find(x => x.id === id);
+  showError("");
+  btn.disabled = true; btn.textContent = "Generuję…";
+  try {
+    const result = await requestPosts([p]);
+    if (result[id]) lastResults[id] = result[id];
+    render();
+    toast(`Nowa wersja: ${p.name}`);
+  } catch (e) {
+    showError(e.message);
+    btn.disabled = false; btn.textContent = "Nowa wersja";
+  }
+}
+
+function fullText(id) {
+  const r = lastResults[id];
+  if (!r) return "";
+  const tags = (r.hashtagi || []).filter(Boolean).join(" ");
+  return tags ? `${r.tekst.trim()}\n\n${tags}` : r.tekst.trim();
+}
+
+function render() {
+  const ids = Object.keys(lastResults);
+  if (!ids.length) {
+    els.output.innerHTML = `<div class="empty"><h3>Tu pojawią się Twoje posty</h3><p class="hint" style="max-width:44ch">Podaj klucz API, wklej tekst i wybierz platformy.</p></div>`;
+    return;
+  }
+  els.copyAll.hidden = false;
+  els.output.innerHTML = `<div class="cards">${ids.map(id => {
+    const p = PLATFORMS.find(x => x.id === id);
+    const r = lastResults[id];
+    const len = fullText(id).length;
+    return `<article class="card" data-id="${id}">
+      <div class="card-top"><h3>${p.name}</h3><span class="pill ${len > p.limit ? "over" : ""}" data-pill>${len} / ${p.limit}</span></div>
+      <div class="card-body">
+        <p class="post" contenteditable="true" spellcheck="true" data-text>${esc(r.tekst)}</p>
+        ${(r.hashtagi || []).length ? `<p class="tags">${esc(r.hashtagi.join(" "))}</p>` : ""}
+        ${r.wskazowka ? `<p class="tip"><b>Wskazówka:</b> ${esc(r.wskazowka)}</p>` : ""}
+      </div>
+      <div class="card-actions">
+        <button type="button" class="small" data-copy>Kopiuj</button>
+        <button type="button" class="small" data-regen>Nowa wersja</button>
+      </div>
+    </article>`;
+  }).join("")}</div>`;
+
+  els.output.querySelectorAll(".card").forEach(card => {
+    const id = card.dataset.id;
+    const p = PLATFORMS.find(x => x.id === id);
+    const textEl = card.querySelector("[data-text]");
+    textEl.addEventListener("input", () => {
+      lastResults[id].tekst = textEl.innerText;
+      const len = fullText(id).length;
+      const pill = card.querySelector("[data-pill]");
+      pill.textContent = `${len} / ${p.limit}`;
+      pill.classList.toggle("over", len > p.limit);
+    });
+    card.querySelector("[data-copy]").addEventListener("click", () => copyText(fullText(id), `Skopiowano: ${p.name}`));
+    card.querySelector("[data-regen]").addEventListener("click", (e) => regenerate(id, e.currentTarget));
+  });
+}
+
+async function copyText(text, msg) {
+  try { await navigator.clipboard.writeText(text); toast(msg); }
+  catch {
+    const ta = document.createElement("textarea");
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); toast(msg); } catch { toast("Zaznacz tekst i skopiuj ręcznie"); }
+    ta.remove();
+  }
+}
+
+function copyAll() {
+  const text = Object.keys(lastResults).map(id => `=== ${PLATFORMS.find(p => p.id === id).name} ===\n${fullText(id)}`).join("\n\n");
+  copyText(text, "Skopiowano wszystkie posty");
+}
+
+init();
+</script>
+</body>
+</html>
