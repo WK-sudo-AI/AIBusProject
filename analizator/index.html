@@ -794,7 +794,7 @@ async function handleFile(file){
     state.wb = null;
     const buf = await file.arrayBuffer();
     let text = new TextDecoder('utf-8').decode(buf);
-    if (text.includes('�')) { try { text = new TextDecoder('windows-1250').decode(buf); } catch {} }
+    if (text.includes('\uFFFD')) { try { text = new TextDecoder('windows-1250').decode(buf); } catch {} }
     setData(buildDataset(parseDelimited(text)), file.name, false);
   } catch (e) {
     console.error(e);
