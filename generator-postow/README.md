@@ -6,7 +6,8 @@ Aplikacja, która z wklejonego tekstu (artykułu, notatki, ogłoszenia) tworzy g
 - Platformy: LinkedIn, Facebook, Instagram, X, Threads, TikTok, YouTube Shorts. Każda ma własne wytyczne (długość, struktura, liczba hashtagów); dla TikToka powstaje scenariusz wideo, dla Instagrama koncepcja grafiki lub karuzeli.
 - Ustawienia: ton, język (polski, angielski, niemiecki, hiszpański), grupa docelowa, wezwanie do działania, emoji, hashtagi, model i kreatywność (temperature).
 - Wynik: karta dla każdej platformy z tekstem, hashtagami, wskazówką publikacyjną i licznikiem znaków względem limitu platformy. Tekst można poprawić bezpośrednio w karcie, skopiować albo wygenerować ponownie tylko dla jednej platformy. „Kopiuj wszystko” kopiuje komplet postów.
-- Model zwraca ustrukturyzowany JSON (`responseSchema`), więc posty zawsze trafiają do właściwych kart. Domyślny model to `gemini-2.5-flash`; w polu „Model” można wpisać inny.
+- Model zwraca ustrukturyzowany JSON (`responseSchema`), więc posty zawsze trafiają do właściwych kart.
+- Modele: po sprawdzeniu klucza (także automatycznie, gdy klucz jest zapamiętany) aplikacja pobiera z API Google aktualną listę modeli dostępnych dla tego klucza i pokazuje tylko modele tekstowe (bez TTS, obrazu, audio na żywo, embeddingów). Bez klucza widać listę podstawową (stan: listopad 2026) z domyślnym `gemini-3.8-flash`. Wybrany model zapisuje się w przeglądarce.
 
 ## Uruchomienie
 
