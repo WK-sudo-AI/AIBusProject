@@ -43,6 +43,7 @@ Druga aplikacja w katalogu [`analizator/`](analizator/index.html) analizuje arku
 - Wejście: plik `.xlsx`, rozpakowywany w przeglądarce przez `DecompressionStream` i `DOMParser`; plik `.csv`/`.tsv` (separator tabulator, średnik lub przecinek) albo zakres wklejony z Excela. Stary format `.xls` nie jest obsługiwany.
 - Nagłówki są rozpoznawane mimo dodatkowych spacji. Liczby obsługują zapis polski i amerykański (`5,8`, `$4,30`, `1 618,5`, `$1,618.50`, `($7 500,00)`, `$-`). Daty obsługują formaty `dd.mm.rrrr`, `rrrr-mm-dd` oraz numer seryjny Excela.
 - Analiza: filtry (segment, kraj, produkt, przedział rabatu, rok), KPI, trend miesięczny sprzedaży i zysku, rozbicia według segmentu, kraju i produktu, wpływ rabatów na marżę, automatyczne obserwacje oraz tabela przestawna kopiowana do Excela.
+- Raport PDF: przycisk „Pobierz raport PDF” tworzy raport A4 (KPI, trend, obserwacje, rozbicia, tabela przestawna, jakość danych) z uwzględnieniem bieżących filtrów. Strony są rysowane na canvasie i składane w plik PDF natywnym kodem, bez bibliotek; tekst w PDF jest obrazem, więc nie da się go zaznaczać.
 - Jakość danych: kontrola formuł `Gross Sales = Units × Sale Price`, `Sales = Gross − Discounts`, `Profit = Sales − COGS` (tolerancja 0,5%), a także nieczytelnych liczb i dat oraz zgodności Month Number i Year z kolumną Date.
 
 ## Pliki aplikacji

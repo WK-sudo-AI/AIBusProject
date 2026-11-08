@@ -53,6 +53,10 @@ button{cursor:pointer}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--surface)}
 .btn.primary:hover{filter:brightness(1.07)}
 .btn svg{width:18px;height:18px}
+.btn:disabled{opacity:.6;cursor:progress}
+.pdf-msg{flex-basis:100%;text-align:right;font-size:.85rem;color:var(--muted);min-height:1.2em}
+.pdf-msg.err{color:var(--neg)}
+@media (max-width:640px){.pdf-msg{text-align:left}}
 .status{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:12px 16px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
 .status .src{font-weight:650;min-width:0;overflow-wrap:anywhere}
 .status.error{border-color:var(--neg);background:var(--neg-soft)}
@@ -162,8 +166,13 @@ td .mbar.n{background:var(--neg)}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M5 21h14"/></svg>
         Wczytaj plik Excel lub CSV
       </button>
+      <button class="btn" id="pdf" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M12 12v6M9 15l3 3 3-3"/></svg>
+        Pobierz raport PDF
+      </button>
       <button class="btn" id="sample" type="button">Dane przykładowe</button>
       <input id="file" type="file" accept=".xlsx,.xlsm,.csv,.tsv,.txt" hidden>
+      <span id="pdfMsg" class="pdf-msg" aria-live="polite"></span>
     </div>
   </header>
 
@@ -834,7 +843,301 @@ function loadSample(){
   setData(buildDataset(sampleData()), 'Przykład: 420 transakcji, wrz 2013 – gru 2014', true);
 }
 
+/* ===================== Raport PDF (canvas → strony A4 → PDF, bez bibliotek) ===================== */
+const PDFC = {fg:'#252b2a', muted:'#69716f', line:'#e3e7e6', soft:'#f2f5f4', accent:'#427c67', bar:'#a9c9bb', neg:'#b05243', warn:'#9a6a14', warnSoft:'#f7eedb', okSoft:'#e2eee8', negSoft:'#f6e5e1'};
+const PDF_FB = '"DM Sans Variable", system-ui, "Segoe UI", sans-serif';
+const PDF_FH = '"Manrope Variable", "DM Sans Variable", system-ui, sans-serif';
+
+async function renderReportPages(){
+  await Promise.all(['400 20px "DM Sans Variable"', '700 20px "DM Sans Variable"', '700 20px "Manrope Variable"']
+    .map(f => document.fonts.load(f).catch(() => null)));
+  const W = 1240, H = 1754, M = 84, CW = W - 2 * M, SC = 1.5; // układ w px dla 150 dpi, rysowany ×1,5
+  const pages = []; let ctx, y;
+  const rows = filtered(), t = totals(rows), d = state.data;
+
+  const newPage = () => {
+    const c = document.createElement('canvas'); c.width = W * SC; c.height = H * SC;
+    ctx = c.getContext('2d'); ctx.scale(SC, SC);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H);
+    pages.push(c); y = M;
+  };
+  const ensure = h => { if (y + h > H - M - 20) newPage(); };
+  const font = (size, weight = 400, head = false) => { ctx.font = `${weight} ${size}px ${head ? PDF_FH : PDF_FB}`; };
+  const txt = (s, x, yy, o = {}) => {
+    font(o.size || 20, o.weight || 400, o.head); ctx.fillStyle = o.color || PDFC.fg;
+    ctx.textAlign = o.align || 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(String(s), x, yy);
+  };
+  const fit = (s, maxW) => { s = String(s); if (ctx.measureText(s).width <= maxW) return s; while (s.length > 1 && ctx.measureText(s + '…').width > maxW) s = s.slice(0, -1); return s + '…'; };
+  const rect = (x, yy, w, h, color, r = 0) => { ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, yy, w, h, r) : ctx.rect(x, yy, w, h); ctx.fill(); };
+  const hline = (yy, color = PDFC.line, w = 1) => { ctx.fillStyle = color; ctx.fillRect(M, yy, CW, w); };
+  // akapit z pogrubieniami (<b>) zawijany do szerokości
+  const rich = (html, x, maxW, size = 20, lh = 30) => {
+    const box = document.createElement('div'); box.innerHTML = html;
+    const words = [];
+    box.childNodes.forEach(n => { const bold = n.nodeName === 'B'; (n.textContent || '').split(/(\s+)/).forEach(w => w && words.push({w, bold})); });
+    const lines = [[]]; let lw = 0;
+    for (const it of words) {
+      font(size, it.bold ? 700 : 400); const wd = ctx.measureText(it.w).width;
+      if (/^\s+$/.test(it.w)) { if (lines.at(-1).length) { lines.at(-1).push({...it, wd}); lw += wd; } continue; }
+      if (lw + wd > maxW && lines.at(-1).length) { while (lines.at(-1).length && /^\s+$/.test(lines.at(-1).at(-1).w)) lines.at(-1).pop(); lines.push([]); lw = 0; }
+      lines.at(-1).push({...it, wd}); lw += wd;
+    }
+    ensure(lines.length * lh);
+    for (const ln of lines) { let cx = x; y += lh; for (const it of ln) { txt(it.w, cx, y - 8, {size, weight: it.bold ? 700 : 400}); cx += it.wd; } }
+  };
+  const sectionTitle = (s, right) => {
+    ensure(70); y += 34; txt(s, M, y, {size: 28, weight: 700, head: true});
+    if (right) txt(right, M + CW, y, {size: 17, color: PDFC.muted, align: 'right'});
+    y += 18;
+  };
+
+  /* --- Nagłówek --- */
+  newPage();
+  txt('Raport sprzedaży', M, y + 40, {size: 46, weight: 750, head: true});
+  y += 76;
+  const now = new Date().toLocaleString('pl-PL', {dateStyle: 'long', timeStyle: 'short'});
+  txt(`${state.source} · ${plural(rows.length, 'wiersz', 'wiersze', 'wierszy')} · wygenerowano ${now}`, M, y, {size: 19, color: PDFC.muted});
+  y += 30;
+  const active = FILTER_DIMS.filter(k => state.filters[k]).map(k => `${DIMS[k]}: ${state.filters[k]}`);
+  font(19); txt(fit(`Filtry: ${active.length ? active.join(' · ') : 'brak, raport obejmuje wszystkie dane'}`, CW), M, y, {size: 19, color: PDFC.muted});
+  if (state.isSample) { y += 30; txt('Uwaga: raport z danych przykładowych, nie z wczytanego pliku.', M, y, {size: 19, weight: 700, color: PDFC.warn}); }
+  y += 26; hline(y, PDFC.fg, 2); y += 26;
+
+  /* --- KPI --- */
+  const kpis = [
+    ['SPRZEDAŻ NETTO', money(t.sales, {compact: true}), plural(t.n, 'transakcja', 'transakcje', 'transakcji'), PDFC.fg],
+    ['ZYSK', money(t.profit, {compact: true}), `marża ${pct(t.margin)}`, t.profit < 0 ? PDFC.neg : PDFC.fg],
+    ['RABATY', money(t.discounts, {compact: true}), `${pct(t.discRate)} sprzedaży brutto`, PDFC.fg],
+    ['KOSZT (COGS)', money(t.cogs, {compact: true}), `${pct(t.sales ? t.cogs / t.sales : null)} sprzedaży`, PDFC.fg],
+    ['SZTUKI', units(t.units), t.units ? `śr. ${money(t.sales / t.units)}/szt.` : '–', PDFC.fg],
+  ];
+  const gap = 14, kw = (CW - gap * 4) / 5, kh = 118;
+  kpis.forEach(([k, v, s, col], i) => {
+    const x = M + i * (kw + gap);
+    rect(x, y, kw, kh, PDFC.soft, 12);
+    txt(k, x + 16, y + 32, {size: 14, weight: 700, color: PDFC.muted});
+    let size = 30; font(size, 750, true); while (size > 16 && ctx.measureText(v).width > kw - 32) font(--size, 750, true);
+    txt(v, x + 16, y + 72, {size, weight: 750, head: true, color: col});
+    font(15); txt(fit(s, kw - 32), x + 16, y + 100, {size: 15, color: PDFC.muted});
+  });
+  y += kh + 10;
+
+  /* --- Trend miesięczny --- */
+  sectionTitle('Sprzedaż i zysk w miesiącach');
+  const ch = 400; ensure(ch + 20);
+  if (!trendData.length) { y += 40; txt('Brak dat w danych.', M, y, {size: 19, color: PDFC.muted}); y += 20; }
+  else {
+    // legenda
+    rect(M + CW - 300, y - 8, 16, 16, PDFC.bar, 3); txt('Sprzedaż netto', M + CW - 276, y + 6, {size: 16, color: PDFC.muted});
+    rect(M + CW - 130, y - 1, 22, 4, PDFC.accent, 2); txt('Zysk', M + CW - 98, y + 6, {size: 16, color: PDFC.muted});
+    y += 20;
+    const L = M + 92, R = M + CW, T = y + 10, B = y + ch - 40, pw = R - L, ph = B - T;
+    const vmax = Math.max(0, ...trendData.map(g => Math.max(g.sales, g.profit)));
+    const vmin = Math.min(0, ...trendData.map(g => g.profit));
+    const step = niceStep((vmax - vmin) || 1, 5);
+    const lo = Math.floor(vmin / step) * step, hi = Math.ceil(vmax / step) * step || step;
+    const yy = v => T + ph - (v - lo) / (hi - lo) * ph;
+    const bw = pw / trendData.length, xx = i => L + bw * i + bw / 2;
+    for (let v = lo; v <= hi + step / 2; v += step) {
+      ctx.fillStyle = PDFC.line; ctx.fillRect(L, Math.round(yy(v)), pw, 1);
+      txt(money(v, {compact: true}).replace(/\s?(USD|PLN|EUR|GBP)/, ''), L - 12, yy(v) + 6, {size: 15, color: PDFC.muted, align: 'right'});
+    }
+    trendData.forEach((g, i) => { const top = yy(Math.max(0, g.sales)); rect(xx(i) - bw * 0.34, top, bw * 0.68, Math.max(1, Math.abs(yy(g.sales) - yy(0))), PDFC.bar, 3); });
+    if (lo < 0) { ctx.fillStyle = PDFC.muted; ctx.fillRect(L, yy(0), pw, 1.5); }
+    ctx.strokeStyle = PDFC.accent; ctx.lineWidth = 3.5; ctx.lineJoin = 'round'; ctx.beginPath();
+    trendData.forEach((g, i) => i ? ctx.lineTo(xx(i), yy(g.profit)) : ctx.moveTo(xx(i), yy(g.profit))); ctx.stroke();
+    trendData.forEach((g, i) => { ctx.beginPath(); ctx.arc(xx(i), yy(g.profit), trendData.length > 30 ? 3 : 5, 0, Math.PI * 2); ctx.fillStyle = i === trendData.length - 1 ? PDFC.accent : '#fff'; ctx.fill(); ctx.lineWidth = 2.5; ctx.stroke(); });
+    const every = Math.ceil(trendData.length * 60 / pw);
+    trendData.forEach((g, i) => {
+      if (i % every) return; const [yr, mm] = g.key.split('-');
+      txt(MONTHS[+mm - 1] + (i === 0 || mm === '01' ? ' ' + yr.slice(2) : ''), xx(i), B + 28, {size: 15, color: PDFC.muted, align: 'center'});
+    });
+    y += ch;
+  }
+
+  /* --- Obserwacje --- */
+  sectionTitle('Najważniejsze obserwacje');
+  Array.from($('insights').children).forEach(li => {
+    ensure(34); const y0 = y;
+    rich(li.innerHTML, M + 26, CW - 26, 20, 31);
+    ctx.beginPath(); ctx.arc(M + 8, y0 + 15, 4, 0, Math.PI * 2); ctx.fillStyle = PDFC.accent; ctx.fill();
+    y += 6;
+  });
+
+  /* --- Rozbicia: dwie kolumny --- */
+  const barBlock = (x, w, title, items, key, sub) => {
+    let yy = y;
+    const out = () => yy;
+    txt(title, x, yy + 30, {size: 24, weight: 700, head: true}); yy += 52;
+    const vals = items.map(g => g[key]), max = Math.max(0, ...vals), min = Math.min(0, ...vals), range = (max - min) || 1;
+    const lw = 150, vw = 150, bx = x + lw, bwid = w - lw - vw - 16, zero = bx + (-min / range) * bwid;
+    for (const g of items) {
+      const v = g[key];
+      font(18, 700); txt(fit(g.key, lw - 12), x, yy + 18, {size: 18, weight: 700});
+      rect(bx, yy + 4, bwid, 16, PDFC.soft, 4);
+      const bl = v >= 0 ? zero : zero + (v / range) * bwid;
+      rect(bl, yy + 4, Math.max(2, Math.abs(v) / range * bwid), 16, v < 0 ? PDFC.neg : PDFC.accent, 4);
+      if (min < 0) { ctx.fillStyle = PDFC.muted; ctx.fillRect(zero, yy, 1.5, 24); }
+      txt(money(v, {compact: true}), x + w, yy + 18, {size: 18, weight: 700, align: 'right', color: v < 0 ? PDFC.neg : PDFC.fg});
+      font(15); txt(fit(sub(g), w - lw), bx, yy + 42, {size: 15, color: PDFC.muted});
+      yy += 58;
+    }
+    return out();
+  };
+  const colW = (CW - 48) / 2;
+  const pair = (a, b) => {
+    const need = 70 + Math.max(a.items.length, b ? b.items.length : 0) * 58;
+    ensure(need); y += 24;
+    const ya = barBlock(M, colW, a.title, a.items, a.key, a.sub);
+    const yb = b ? (b.table ? b.table(M + colW + 48, colW) : barBlock(M + colW + 48, colW, b.title, b.items, b.key, b.sub)) : y;
+    y = Math.max(ya, yb) + 6;
+  };
+  const segs = group(rows, 'segment').sort((a, b) => b.profit - a.profit);
+  const ctrs = group(rows, 'country').sort((a, b) => b.sales - a.sales);
+  const prods = group(rows, 'product').sort((a, b) => b.profit - a.profit);
+  const bands = group(rows, 'band').sort((a, b) => bandRank(a.key) - bandRank(b.key) || String(a.key).localeCompare(b.key));
+  if (pages.length === 1 && y > H * 0.55) newPage();
+  pair({title: 'Zysk wg segmentu', items: segs, key: 'profit', sub: g => `marża ${pct(g.margin)}`},
+       {title: 'Sprzedaż wg kraju', items: ctrs, key: 'sales', sub: g => `${pct(t.sales ? g.sales / t.sales : null)} sprzedaży · marża ${pct(g.margin)}`});
+  pair({title: 'Zysk wg produktu', items: prods, key: 'profit', sub: g => `marża ${pct(g.margin)} · ${units(g.units)} szt.`},
+       {items: bands, table: (x, w) => {
+         let yy = y; txt('Rabaty a marża', x, yy + 30, {size: 24, weight: 700, head: true}); yy += 56;
+         const cols = [['Przedział', 0, 'left'], ['Sprzedaż', w * 0.58, 'right'], ['Rabat', w * 0.76, 'right'], ['Marża', w, 'right']];
+         cols.forEach(([h, cx, al]) => txt(h.toUpperCase(), x + cx, yy, {size: 14, weight: 700, color: PDFC.muted, align: al}));
+         yy += 12; ctx.fillStyle = PDFC.line; ctx.fillRect(x, yy, w, 1.5);
+         for (const g of bands) {
+           yy += 40;
+           font(18); txt(fit(g.key, w * 0.35), x, yy, {size: 18});
+           txt(money(g.sales, {compact: true}), x + w * 0.58, yy, {size: 18, align: 'right'});
+           txt(pct(g.discRate), x + w * 0.76, yy, {size: 18, align: 'right'});
+           txt(pct(g.margin), x + w, yy, {size: 18, weight: 700, align: 'right', color: (g.margin ?? 0) < 0 ? PDFC.neg : PDFC.fg});
+           ctx.fillStyle = PDFC.line; ctx.fillRect(x, yy + 14, w, 1);
+         }
+         return yy + 20;
+       }});
+
+  /* --- Tabela przestawna --- */
+  const dimKey = state.pivotDim;
+  sectionTitle(`Tabela przestawna: ${DIMS[dimKey].toLowerCase()}`, `kwoty w ${CURRENCY}`);
+  const num = v => v == null || !isFinite(v) ? '–' : (Math.abs(v) >= 1000 ? nf0 : new Intl.NumberFormat('pl-PL', {maximumFractionDigits: 2})).format(v);
+  const pcols = [
+    {h: DIMS[dimKey], w: 196, f: g => dimKey === 'ym' && /^\d{4}-\d{2}$/.test(g.key) ? ymLabel(g.key) : g.key},
+    {h: 'Transakcje', w: 100, f: g => nf0.format(g.n)}, {h: 'Sztuki', w: 106, f: g => units(g.units)},
+    {h: 'Brutto', w: 120, f: g => num(g.gross)}, {h: 'Rabaty', w: 104, f: g => num(g.discounts)},
+    {h: 'Sprzedaż', w: 120, f: g => num(g.sales)}, {h: 'COGS', w: 120, f: g => num(g.cogs)},
+    {h: 'Zysk', w: 120, f: g => num(g.profit), neg: g => g.profit < 0}, {h: 'Marża', w: 86, f: g => pct(g.margin), neg: g => (g.margin ?? 0) < 0},
+  ];
+  const head = () => {
+    let x = M; y += 28;
+    pcols.forEach((c, i) => { txt(c.h.toUpperCase(), i ? x + c.w : x, y, {size: 13, weight: 700, color: PDFC.muted, align: i ? 'right' : 'left'}); x += c.w; });
+    y += 12; ctx.fillStyle = PDFC.line; ctx.fillRect(M, y, CW, 1.5);
+  };
+  const prow = (g, bold) => {
+    let x = M; y += 36;
+    pcols.forEach((c, i) => {
+      const s = c.f(g); font(17, bold ? 700 : 400);
+      txt(i ? s : fit(s, c.w - 10), i ? x + c.w : x, y, {size: 17, weight: bold ? 700 : 400, align: i ? 'right' : 'left', color: c.neg && c.neg(g) ? PDFC.neg : PDFC.fg});
+      x += c.w;
+    });
+    ctx.fillStyle = bold ? PDFC.fg : PDFC.line; ctx.fillRect(M, y + 13, CW, bold ? 0 : 1);
+  };
+  ensure(120); head();
+  for (const g of pivotRows) { if (y + 40 > H - M - 20) { newPage(); head(); } prow(g); }
+  ensure(50); ctx.fillStyle = PDFC.fg; ctx.fillRect(M, y + 14, CW, 2); y += 4; prow({...t, key: 'Razem'}, true);
+  y += 28;
+
+  /* --- Jakość danych --- */
+  const qitems = [];
+  for (const c of d.checks) qitems.push(c.skipped ? ['pominięto', PDFC.soft, PDFC.muted, c.name, 'Brak potrzebnych kolumn.']
+    : c.bad.length ? [plural(c.bad.length, 'różnica', 'różnice', 'różnic'), PDFC.warnSoft, PDFC.warn, c.name, `Wiersze Excela: ${c.bad.slice(0, 8).map(b => b.line).join(', ')}${c.bad.length > 8 ? '…' : ''}`]
+    : ['OK', PDFC.okSoft, PDFC.accent, c.name, 'Zgadza się we wszystkich wierszach.']);
+  [[d.badNum, 'Nieczytelne liczby'], [d.badDate, 'Nieczytelne daty'], [d.monthMismatch, 'Month Number / Year niezgodne z Date']].forEach(([arr, name]) =>
+    qitems.push(arr.length ? [nf0.format(arr.length), PDFC.negSoft, PDFC.neg, name, `Wiersze Excela: ${arr.slice(0, 8).map(b => b.line).join(', ')}${arr.length > 8 ? '…' : ''}`] : ['OK', PDFC.okSoft, PDFC.accent, name, 'Brak problemów.']));
+  if (d.missing.length) qitems.push(['brak', PDFC.warnSoft, PDFC.warn, 'Brakujące kolumny', d.missing.join(', ')]);
+  ensure(70 + qitems.length * 68); // sekcja jakości w całości na jednej stronie
+  sectionTitle('Jakość danych', 'sprawdzenie formuł z arkusza');
+  for (const [chip, bg, fg, name, desc] of qitems) {
+    ensure(62); y += 16;
+    font(15, 700); const cw = ctx.measureText(chip).width + 24;
+    rect(M, y, cw, 28, bg, 14); txt(chip, M + cw / 2, y + 20, {size: 15, weight: 700, color: fg, align: 'center'});
+    txt(name, M + 150, y + 21, {size: 19, weight: 700});
+    font(16); txt(fit(desc, CW - 150), M + 150, y + 47, {size: 16, color: PDFC.muted});
+    y += 52;
+  }
+
+  /* --- Stopki --- */
+  pages.forEach((c, i) => {
+    const g = c.getContext('2d');
+    g.font = `400 15px ${PDF_FB}`; g.fillStyle = PDFC.muted; g.textBaseline = 'alphabetic';
+    g.fillStyle = PDFC.line; g.fillRect(M, H - M + 18, CW, 1); g.fillStyle = PDFC.muted;
+    g.textAlign = 'left'; g.fillText('Analizator sprzedaży', M, H - M + 46);
+    g.textAlign = 'right'; g.fillText(`Strona ${i + 1} z ${pages.length}`, M + CW, H - M + 46);
+  });
+  return pages;
+}
+
+function pdfString(s){ let h = 'FEFF'; for (const ch of String(s)) { const c = ch.codePointAt(0); if (c > 0xffff) { const v = c - 0x10000; h += (0xd800 + (v >> 10)).toString(16).padStart(4, '0') + (0xdc00 + (v & 0x3ff)).toString(16).padStart(4, '0'); } else h += c.toString(16).padStart(4, '0'); } return `<${h.toUpperCase()}>`; }
+
+async function pagesToPdf(pages, title){
+  const enc = new TextEncoder(), parts = [], offs = [];
+  let len = 0;
+  const push = x => { const b = typeof x === 'string' ? enc.encode(x) : x; parts.push(b); len += b.length; };
+  const obj = (id, write) => { offs[id] = len; push(`${id} 0 obj\n`); write(); push('\nendobj\n'); };
+  const PW = 595.28, PH = 841.89, n = pages.length;
+  const now = new Date(), stamp = `D:${now.getFullYear()}${pad2(now.getMonth() + 1)}${pad2(now.getDate())}${pad2(now.getHours())}${pad2(now.getMinutes())}${pad2(now.getSeconds())}`;
+  push('%PDF-1.4\n'); push(new Uint8Array([0x25, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a]));
+  obj(1, () => push('<< /Type /Catalog /Pages 2 0 R >>'));
+  obj(2, () => push(`<< /Type /Pages /Kids [${pages.map((_, i) => `${4 + i * 3} 0 R`).join(' ')}] /Count ${n} >>`));
+  obj(3, () => push(`<< /Title ${pdfString(title)} /Producer ${pdfString('Analizator sprzedaży')} /CreationDate (${stamp}) >>`));
+  for (let i = 0; i < n; i++) {
+    const c = pages[i];
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9));
+    if (!blob) throw new Error('Przeglądarka nie wygenerowała obrazu strony.');
+    const jpg = new Uint8Array(await blob.arrayBuffer());
+    const p = 4 + i * 3, cs = `q ${PW} 0 0 ${PH} 0 0 cm /Im0 Do Q`;
+    obj(p, () => push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PW} ${PH}] /Resources << /XObject << /Im0 ${p + 2} 0 R >> >> /Contents ${p + 1} 0 R >>`));
+    obj(p + 1, () => push(`<< /Length ${cs.length} >>\nstream\n${cs}\nendstream`));
+    obj(p + 2, () => { push(`<< /Type /XObject /Subtype /Image /Width ${c.width} /Height ${c.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpg.length} >>\nstream\n`); push(jpg); push('\nendstream'); });
+  }
+  const size = 4 + n * 3, xref = len;
+  push(`xref\n0 ${size}\n0000000000 65535 f \n`);
+  for (let id = 1; id < size; id++) push(String(offs[id]).padStart(10, '0') + ' 00000 n \n');
+  push(`trailer\n<< /Size ${size} /Root 1 0 R /Info 3 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  return new Blob(parts, {type: 'application/pdf'});
+}
+
+// W podglądzie claude.ai pobieranie idzie przez capability „downloads”; poza nim zwykły link do pobrania.
+const downloadsReady = window.claude?.use ? window.claude.use('downloads').catch(() => null) : Promise.resolve(undefined);
+async function offerFile(blob, filename){
+  const dl = await downloadsReady;
+  if (dl) {
+    try { await dl.save({filename, data: blob}); return 'saved'; }
+    catch (e) { if (e && e.code === 'declined') return 'declined'; if (e && e.code === 'rate_limited') throw new Error('Okno zapisu jest już otwarte. Zamknij je i spróbuj ponownie.'); throw new Error('Zapis pliku jest niedostępny w tym widoku.'); }
+  }
+  if (dl === null) throw new Error('Zapis pliku jest niedostępny w tym widoku. Otwórz analizator z repozytorium (analizator/index.html).');
+  const url = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = url; a.download = filename; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+  return 'saved';
+}
+
+async function exportPdf(){
+  const btn = $('pdf'), msg = $('pdfMsg');
+  if (!state.data) return;
+  btn.disabled = true; msg.className = 'pdf-msg'; msg.textContent = 'Generuję raport PDF…';
+  try {
+    const pages = await renderReportPages();
+    const blob = await pagesToPdf(pages, `Raport sprzedaży: ${state.source}`);
+    const d = new Date(), name = `raport-sprzedazy-${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}.pdf`;
+    const res = await offerFile(blob, name);
+    msg.textContent = res === 'declined' ? 'Zapis anulowano.' : `Gotowe: ${name} (${plural(pages.length, 'strona', 'strony', 'stron')}, ${nf1.format(blob.size / 1048576)} MB).`;
+  } catch (e) {
+    console.error(e); msg.className = 'pdf-msg err'; msg.textContent = e.message || 'Nie udało się wygenerować PDF.';
+  } finally { btn.disabled = false; }
+}
+
 /* ===================== Zdarzenia ===================== */
+$('pdf').onclick = exportPdf;
 $('pick').onclick = () => $('file').click();
 $('file').onchange = e => { handleFile(e.target.files[0]); e.target.value = ''; };
 $('sample').onclick = loadSample;
