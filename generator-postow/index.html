@@ -314,17 +314,34 @@ function toast(msg) { els.toast.textContent = msg; els.toast.classList.add("show
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
 // ---------- API ----------
+function cleanKey() {
+  // usuwa spacje, entery i niewidoczne znaki skopiowane razem z kluczem
+  const key = els.key.value.replace(/[\s​-‍﻿]/g, "");
+  if (key !== els.key.value) els.key.value = key;
+  return key;
+}
+
+function isEmbedded() {
+  try { return window.self !== window.top; } catch { return true; }
+}
+
 async function callApi(path, options = {}) {
-  const key = els.key.value.trim();
+  const key = cleanKey();
   if (!key) throw new Error("Podaj klucz Google Gemini API.");
+  if (!/^[\x21-\x7E]+$/.test(key)) throw new Error("Klucz zawiera niedozwolone znaki (np. polskie litery lub cudzysłowy). Skopiuj go ponownie z Google AI Studio.");
   let res;
   try {
     res = await fetch(`${API_BASE}/${path}`, {
       ...options,
       headers: { "Content-Type": "application/json", "x-goog-api-key": key, ...(options.headers || {}) }
     });
-  } catch {
-    throw new Error("Brak połączenia z API Google. Sprawdź internet lub czy przeglądarka nie blokuje żądania.");
+  } catch (e) {
+    console.error("Gemini fetch error:", e);
+    if (isEmbedded()) {
+      throw new Error("Strona działa w osadzonym podglądzie (np. w czacie Claude), który blokuje połączenia z API Google. Pobierz plik index.html i otwórz go bezpośrednio w przeglądarce.");
+    }
+    if (!navigator.onLine) throw new Error("Brak połączenia z internetem.");
+    throw new Error("Przeglądarka nie połączyła się z generativelanguage.googleapis.com. Najczęściej blokuje to sieć firmowa / VPN lub rozszerzenie (adblock). Spróbuj w oknie incognito albo w innej sieci. Szczegóły: " + (e && e.message ? e.message : e));
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
