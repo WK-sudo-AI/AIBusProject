@@ -1,0 +1,868 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Analizator sprzedaży</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Układ: pasek wczytywania → filtry → KPI → trend miesięczny → siatka rozbić → tabela przestawna. Kolory i kroje jak w Planerze ROI. */
+@font-face{font-family:'DM Sans Variable';font-style:normal;font-weight:100 1000;font-display:swap;src:url(../assets/fonts/dm-sans-latin-ext-wght-normal.woff2) format('woff2-variations');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'DM Sans Variable';font-style:normal;font-weight:100 1000;font-display:swap;src:url(../assets/fonts/dm-sans-latin-wght-normal.woff2) format('woff2-variations');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'Manrope Variable';font-style:normal;font-weight:200 800;font-display:swap;src:url(../assets/fonts/manrope-latin-ext-wght-normal.woff2) format('woff2-variations');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'Manrope Variable';font-style:normal;font-weight:200 800;font-display:swap;src:url(../assets/fonts/manrope-latin-wght-normal.woff2) format('woff2-variations');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+
+:root{
+  --bg:#f5f6f8; --surface:#ffffff; --fg:#252b2a; --muted:#69716f; --line:#e3e7e6;
+  --accent:#427c67; --accent-soft:#e2eee8; --bar:#a9c9bb; --neg:#b05243; --neg-soft:#f6e5e1;
+  --warn:#9a6a14; --warn-soft:#f7eedb;
+  --font-body:'DM Sans Variable',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --font-head:'Manrope Variable','DM Sans Variable',system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#131816; --surface:#1b2120; --fg:#e3e8e6; --muted:#9aa4a1; --line:#2b3331;
+  --accent:#72b499; --accent-soft:#213229; --bar:#3c6655; --neg:#e48c7b; --neg-soft:#3a2420;
+  --warn:#dcaa50; --warn-soft:#342a17; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#131816; --surface:#1b2120; --fg:#e3e8e6; --muted:#9aa4a1; --line:#2b3331;
+  --accent:#72b499; --accent-soft:#213229; --bar:#3c6655; --neg:#e48c7b; --neg-soft:#3a2420;
+  --warn:#dcaa50; --warn-soft:#342a17; color-scheme:dark}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--font-body);font-synthesis:none;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px 48px}
+h1,h2,h3,p{margin:0}
+h1,h2,h3{font-family:var(--font-head);text-wrap:balance;letter-spacing:-.01em}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1180px;margin:0 auto;display:grid;gap:20px}
+.num{font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.neg{color:var(--neg)}
+.pos{color:var(--accent)}
+
+/* Nagłówek i wczytywanie */
+.top{display:flex;flex-wrap:wrap;gap:16px 24px;align-items:end;justify-content:space-between}
+.top h1{font-size:1.75rem;font-weight:750}
+.top p{color:var(--muted);max-width:60ch}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+.btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:9px 14px;font-weight:600;transition:background .15s,border-color .15s}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn svg{width:18px;height:18px}
+.status{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:12px 16px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.status .src{font-weight:650;min-width:0;overflow-wrap:anywhere}
+.status.error{border-color:var(--neg);background:var(--neg-soft)}
+.chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:2px 10px;font-size:.8rem;font-weight:650;background:var(--accent-soft);color:var(--accent)}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.chip.bad{background:var(--neg-soft);color:var(--neg)}
+.status select{border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:4px 8px}
+details.paste{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:0 16px}
+details.paste summary{cursor:pointer;padding:12px 0;font-weight:600}
+details.paste[open]{padding-bottom:16px}
+details.paste textarea{width:100%;min-height:140px;border:1px solid var(--line);border-radius:8px;background:var(--bg);padding:10px;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;resize:vertical}
+details.paste .row{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center}
+.drop{position:fixed;inset:0;z-index:20;display:grid;place-items:center;background:color-mix(in srgb,var(--bg) 85%,transparent);border:3px dashed var(--accent);font:700 1.3rem var(--font-head);color:var(--accent)}
+
+/* Filtry */
+.filters{display:flex;flex-wrap:wrap;gap:12px;align-items:end}
+.filters label{display:grid;gap:4px;font-size:.75rem;font-weight:650;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);min-width:0;flex:1 1 150px}
+.filters select{text-transform:none;letter-spacing:0;font-size:.95rem;font-weight:500;color:var(--fg);border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:8px 10px;width:100%}
+.filters .btn{flex:0 0 auto}
+
+/* KPI */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:grid;gap:2px;min-width:0}
+.kpi .k{font-size:.75rem;font-weight:650;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.kpi .v{font:750 1.55rem/1.2 var(--font-head);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.kpi .s{font-size:.82rem;color:var(--muted)}
+
+/* Karty */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;display:grid;gap:14px;min-width:0;align-content:start}
+.card-head{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;justify-content:space-between}
+.card h2{font-size:1.05rem;font-weight:700}
+.card .hint{font-size:.82rem;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));gap:20px}
+.legend{display:flex;gap:14px;font-size:.82rem;color:var(--muted)}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.legend .l-bar{background:var(--bar)}
+.legend .l-line{background:var(--accent);height:3px;border-radius:2px;vertical-align:3px}
+
+/* Wykres trendu */
+.chart{position:relative;min-height:260px}
+.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.chart .grid line{stroke:var(--line)}
+.chart .axis text{fill:var(--muted);font-size:11px;font-family:var(--font-body)}
+.chart .bars rect{fill:var(--bar)}
+.chart .zero{stroke:var(--muted);stroke-width:1}
+.chart .pline{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linejoin:round}
+.chart .pdot{fill:var(--surface);stroke:var(--accent);stroke-width:2}
+.chart .pdot.last{fill:var(--accent)}
+.chart .hover{fill:var(--fg);opacity:.06}
+.tip{position:absolute;pointer-events:none;background:var(--fg);color:var(--bg);border-radius:8px;padding:8px 10px;font-size:.8rem;line-height:1.45;white-space:nowrap;z-index:2;transform:translate(-50%,-100%);font-variant-numeric:tabular-nums}
+.empty{color:var(--muted);padding:24px 0;text-align:center}
+
+/* Paski rozbić */
+.bars-list{display:grid;gap:10px}
+.bar-row{display:grid;grid-template-columns:minmax(80px,30%) 1fr auto;gap:4px 12px;align-items:center}
+.bar-label{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.bar-track{position:relative;height:14px;background:var(--bg);border-radius:4px}
+.bar-track i{position:absolute;top:0;bottom:0;background:var(--accent);border-radius:4px}
+.bar-track i.n{background:var(--neg)}
+.bar-track b{position:absolute;top:-3px;bottom:-3px;width:1px;background:var(--muted)}
+.bar-val{text-align:right;font-variant-numeric:tabular-nums;font-weight:650;white-space:nowrap}
+.bar-sub{grid-column:2 / 4;font-size:.78rem;color:var(--muted);margin-top:-4px}
+
+/* Obserwacje */
+.insights{margin:0;padding-left:20px;display:grid;gap:6px}
+.insights b{font-weight:700}
+
+/* Tabele */
+.tbl-wrap{overflow-x:auto;margin:0 -4px}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap;font-variant-numeric:tabular-nums}
+th:first-child,td:first-child{text-align:left}
+th{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:650}
+th button{border:0;background:none;padding:0;font:inherit;color:inherit;letter-spacing:inherit;text-transform:inherit;display:inline-flex;gap:4px;align-items:center}
+th button[aria-sort]{color:var(--fg)}
+tfoot td{font-weight:700;border-bottom:0;border-top:2px solid var(--line)}
+td .mbar{display:inline-block;height:8px;border-radius:3px;background:var(--accent);vertical-align:middle;margin-left:8px}
+td .mbar.n{background:var(--neg)}
+.pivot-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.pivot-tools select{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:6px 8px}
+
+/* Jakość danych */
+.checks{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.checks li{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;align-items:start}
+.checks .chip{grid-row:span 2;margin-top:1px}
+.checks .d{font-size:.82rem;color:var(--muted);overflow-wrap:anywhere}
+.examples{font-size:.82rem}
+.examples td,.examples th{padding:5px 8px}
+
+@media (max-width:520px){
+  .top h1{font-size:1.45rem}
+  .kpi .v{font-size:1.3rem}
+  .bar-row{grid-template-columns:minmax(70px,34%) 1fr auto}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Analizator sprzedaży</h1>
+      <p>Wczytaj arkusz z kolumnami Segment, Country, Product, Discount Band, Units Sold, Sales, COGS, Profit, Date. Plik zostaje w przeglądarce i nie jest nigdzie wysyłany.</p>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="pick" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M5 21h14"/></svg>
+        Wczytaj plik Excel lub CSV
+      </button>
+      <button class="btn" id="sample" type="button">Dane przykładowe</button>
+      <input id="file" type="file" accept=".xlsx,.xlsm,.csv,.tsv,.txt" hidden>
+    </div>
+  </header>
+
+  <div class="status" id="status" role="status" aria-live="polite"></div>
+
+  <details class="paste" id="pasteBox">
+    <summary>Wklej dane skopiowane z Excela</summary>
+    <textarea id="pasteText" placeholder="Zaznacz w Excelu zakres razem z wierszem nagłówków, skopiuj i wklej tutaj."></textarea>
+    <div class="row">
+      <button class="btn primary" id="pasteGo" type="button">Analizuj wklejone dane</button>
+      <span class="muted">Kolumny rozdzielone tabulatorem, średnikiem lub przecinkiem.</span>
+    </div>
+  </details>
+
+  <section class="filters" id="filters" aria-label="Filtry"></section>
+
+  <section class="kpis" id="kpis" aria-label="Wskaźniki"></section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Sprzedaż i zysk w miesiącach</h2>
+      <div class="legend"><span><i class="l-bar"></i>Sprzedaż netto</span><span><i class="l-line"></i>Zysk</span></div>
+    </div>
+    <div class="chart" id="trend"></div>
+  </section>
+
+  <section class="card">
+    <h2>Najważniejsze obserwacje</h2>
+    <ul class="insights" id="insights"></ul>
+  </section>
+
+  <div class="grid2">
+    <section class="card"><div class="card-head"><h2>Zysk wg segmentu</h2><span class="hint">pod paskiem: marża</span></div><div class="bars-list" id="bySegment"></div></section>
+    <section class="card"><div class="card-head"><h2>Sprzedaż wg kraju</h2><span class="hint">pod paskiem: udział i marża</span></div><div class="bars-list" id="byCountry"></div></section>
+    <section class="card"><div class="card-head"><h2>Zysk wg produktu</h2><span class="hint">pod paskiem: marża</span></div><div class="bars-list" id="byProduct"></div></section>
+    <section class="card">
+      <div class="card-head"><h2>Rabaty a marża</h2><span class="hint">wg Discount Band</span></div>
+      <div class="tbl-wrap"><table id="byBand"></table></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Tabela przestawna</h2>
+      <div class="pivot-tools">
+        <label for="pivotDim" class="muted">Wiersze:</label>
+        <select id="pivotDim"></select>
+        <button class="btn" id="copyPivot" type="button">Kopiuj do Excela</button>
+        <span id="copyMsg" class="muted" aria-live="polite"></span>
+      </div>
+    </div>
+    <div class="tbl-wrap"><table id="pivot"></table></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Jakość danych</h2><span class="hint">sprawdzenie formuł z arkusza</span></div>
+    <ul class="checks" id="checks"></ul>
+    <div class="tbl-wrap" id="examplesWrap"></div>
+  </section>
+</div>
+<div class="drop" id="drop" hidden>Upuść plik, aby go przeanalizować</div>
+
+<script>
+'use strict';
+/* ===================== Definicje kolumn ===================== */
+const FIELDS = {
+  segment:   {label:'Segment', aliases:['segment']},
+  country:   {label:'Kraj', aliases:['country','kraj']},
+  product:   {label:'Produkt', aliases:['product','produkt']},
+  band:      {label:'Przedział rabatu', aliases:['discount band','przedział rabatu']},
+  units:     {label:'Units Sold', num:true, aliases:['units sold','units','sztuki']},
+  mprice:    {label:'Manufacturing Price', num:true, aliases:['manufacturing price']},
+  sprice:    {label:'Sale Price', num:true, aliases:['sale price','cena sprzedaży']},
+  gross:     {label:'Gross Sales', num:true, aliases:['gross sales','sprzedaż brutto']},
+  discounts: {label:'Discounts', num:true, aliases:['discounts','discount','rabaty']},
+  sales:     {label:'Sales', num:true, aliases:['sales','net sales','sprzedaż','sprzedaż netto']},
+  cogs:      {label:'COGS', num:true, aliases:['cogs','koszt sprzedanych towarów']},
+  profit:    {label:'Profit', num:true, aliases:['profit','zysk']},
+  date:      {label:'Date', aliases:['date','data']},
+  monthNum:  {label:'Month Number', num:true, aliases:['month number','numer miesiąca']},
+  monthName: {label:'Month Name', aliases:['month name','miesiąc']},
+  year:      {label:'Year', num:true, aliases:['year','rok']},
+};
+const DIMS = {segment:'Segment', country:'Kraj', product:'Produkt', band:'Przedział rabatu', year:'Rok', ym:'Miesiąc'};
+const FILTER_DIMS = ['segment','country','product','band','year'];
+const BAND_ORDER = ['none','brak','low','medium','high'];
+const MONTHS = ['sty','lut','mar','kwi','maj','cze','lip','sie','wrz','paź','lis','gru'];
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const normHeader = h => String(h ?? '').replace(/[  ]/g,' ').trim().toLowerCase().replace(/\s+/g,' ');
+const isEmpty = v => v == null || (typeof v === 'string' && v.trim() === '');
+
+/* ===================== Formatowanie ===================== */
+let CURRENCY = 'USD';
+const nf0 = new Intl.NumberFormat('pl-PL',{maximumFractionDigits:0});
+const nf1 = new Intl.NumberFormat('pl-PL',{maximumFractionDigits:1});
+function money(v, opts={}){
+  if (v == null || !isFinite(v)) return '–';
+  const a = Math.abs(v);
+  if (opts.compact && a >= 1e4) return new Intl.NumberFormat('pl-PL',{style:'currency',currency:CURRENCY,notation:'compact',maximumFractionDigits:a>=1e6?2:1}).format(v);
+  return new Intl.NumberFormat('pl-PL',{style:'currency',currency:CURRENCY,maximumFractionDigits:a<1000?2:0,minimumFractionDigits:0}).format(v);
+}
+const pct = v => (v == null || !isFinite(v)) ? '–' : nf1.format(v*100) + '%';
+const units = v => v == null ? '–' : (Math.abs(v) < 100 ? nf1.format(v) : nf0.format(v));
+const pad2 = n => String(n).padStart(2,'0');
+const plural = (n, one, few, many) => { const a = Math.abs(n), d = a % 10, t = a % 100; return nf0.format(n) + ' ' + (a === 1 ? one : (d >= 2 && d <= 4 && (t < 12 || t > 14)) ? few : many); };
+const ymLabel = k => { const [y,m] = k.split('-'); return MONTHS[+m-1] + ' ' + y; };
+
+/* ===================== Parsowanie liczb i dat ===================== */
+function parseNumber(v, decimalComma){
+  if (v == null) return null;
+  if (typeof v === 'number') return isFinite(v) ? v : null;
+  if (typeof v === 'boolean') return null;
+  const raw = String(v);
+  let s = raw.replace(/[  \s]/g,'');
+  if (!s) return null;
+  let neg = false;
+  if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1,-1); }
+  s = s.replace(/[^0-9,.\-]/g,'');
+  if (s.startsWith('-')) { neg = !neg; s = s.slice(1); }
+  if (s === '' || s === '-') return raw.includes('-') ? 0 : null; // "$-" w formacie księgowym = 0
+  if (/-/.test(s)) return null;
+  const lc = s.lastIndexOf(','), ld = s.lastIndexOf('.');
+  if (lc >= 0 && ld >= 0) {
+    s = lc > ld ? s.replace(/\./g,'').replace(',','.') : s.replace(/,/g,'');
+  } else if (lc >= 0) {
+    const p = s.split(',');
+    s = (p.length > 2 || (p[1].length === 3 && !decimalComma)) ? p.join('') : p.join('.');
+  } else if (ld >= 0) {
+    const p = s.split('.');
+    if (p.length > 2 || (p[1].length === 3 && decimalComma)) s = p.join('');
+  }
+  if (s === '' || s === '.') return null;
+  const n = Number(s);
+  return isFinite(n) ? (neg ? -n : n) : null;
+}
+function utcDate(y, m, d){
+  if (!(m >= 1 && m <= 12 && d >= 1 && d <= 31 && y > 1900 && y < 2200)) return null;
+  const t = new Date(Date.UTC(y, m-1, d));
+  return t.getUTCMonth() === m-1 ? t : null;
+}
+function parseDate(v){
+  if (isEmpty(v)) return null;
+  if (typeof v === 'number') return (v > 20000 && v < 80000) ? new Date(Math.round((v - 25569) * 864e5)) : null;
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return utcDate(+m[1], +m[2], +m[3]);
+  m = s.match(/^(\d{1,2})([.\/-])(\d{1,2})\2(\d{2,4})/);
+  if (m) {
+    let a = +m[1], b = +m[3], y = +m[4];
+    if (y < 100) y += 2000;
+    // domyślnie dzień.miesiąc (zapis polski); jeśli drugi człon > 12, to zapis amerykański
+    return b > 12 ? utcDate(y, a, b) : utcDate(y, b, a);
+  }
+  if (/^\d{5}(\.\d+)?$/.test(s)) return parseDate(Number(s));
+  return null;
+}
+
+/* ===================== Odczyt XLSX (ZIP + XML, bez bibliotek) ===================== */
+async function openZip(buf){
+  const dv = new DataView(buf), dec = new TextDecoder();
+  let eocd = -1;
+  for (let i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 65557); i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('To nie jest poprawny plik .xlsx (brak struktury ZIP).');
+  const count = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true);
+  const entries = new Map();
+  for (let k = 0; k < count; k++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true);
+    const nlen = dv.getUint16(p + 28, true), xlen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true);
+    const off = dv.getUint32(p + 42, true);
+    const name = dec.decode(new Uint8Array(buf, p + 46, nlen));
+    entries.set(name.toLowerCase(), {method, csize, off});
+    p += 46 + nlen + xlen + clen;
+  }
+  return {
+    has: name => entries.has(name.toLowerCase()),
+    async text(name){
+      const e = entries.get(name.toLowerCase());
+      if (!e) return null;
+      const start = e.off + 30 + dv.getUint16(e.off + 26, true) + dv.getUint16(e.off + 28, true);
+      const data = new Uint8Array(buf, start, e.csize);
+      if (e.method === 0) return dec.decode(data);
+      if (e.method !== 8) throw new Error('Nieobsługiwana kompresja w pliku .xlsx.');
+      if (typeof DecompressionStream === 'undefined') throw new Error('Ta przeglądarka nie potrafi rozpakować .xlsx. Użyj aktualnego Chrome, Edge, Firefox lub Safari albo zapisz plik jako CSV.');
+      const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      return await new Response(stream).text();
+    }
+  };
+}
+const xml = s => new DOMParser().parseFromString(s, 'application/xml');
+const tags = (node, name) => Array.from(node.getElementsByTagNameNS('*', name));
+function colIndex(ref){
+  const m = /^([A-Z]+)/i.exec(ref || ''); if (!m) return -1;
+  let n = 0; for (const ch of m[1].toUpperCase()) n = n * 26 + ch.charCodeAt(0) - 64;
+  return n - 1;
+}
+async function readWorkbook(buf){
+  const zip = await openZip(buf);
+  const wbXml = await zip.text('xl/workbook.xml');
+  if (!wbXml) throw new Error('W pliku nie ma skoroszytu Excela (xl/workbook.xml).');
+  const relsXml = await zip.text('xl/_rels/workbook.xml.rels');
+  const rels = {};
+  if (relsXml) for (const r of tags(xml(relsXml), 'Relationship')) rels[r.getAttribute('Id')] = r.getAttribute('Target');
+  const sheets = tags(xml(wbXml), 'sheet').map((s, i) => {
+    const rid = s.getAttribute('r:id') || s.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id');
+    let target = rels[rid] || `worksheets/sheet${i+1}.xml`;
+    target = target.startsWith('/') ? target.slice(1) : 'xl/' + target.replace(/^\.\//,'');
+    return {name: s.getAttribute('name'), path: target};
+  });
+  const sstXml = await zip.text('xl/sharedStrings.xml');
+  const sst = sstXml ? tags(xml(sstXml), 'si').map(si =>
+    tags(si, 't').filter(t => t.parentNode.localName !== 'rPh').map(t => t.textContent).join('')) : [];
+  return {zip, sheets, sst};
+}
+async function readSheet(wb, idx){
+  const text = await wb.zip.text(wb.sheets[idx].path);
+  if (!text) throw new Error(`Nie udało się odczytać arkusza „${wb.sheets[idx].name}”.`);
+  const doc = xml(text);
+  const table = [];
+  let seq = 0;
+  for (const row of tags(doc, 'row')) {
+    const rn = +row.getAttribute('r') || (seq + 1); seq = rn;
+    const cells = [];
+    let ci = 0;
+    for (const c of row.children) {
+      if (c.localName !== 'c') continue;
+      const ref = c.getAttribute('r'); const idx = ref ? colIndex(ref) : ci; ci = idx + 1;
+      const t = c.getAttribute('t');
+      const vEl = Array.from(c.children).find(x => x.localName === 'v');
+      const v = vEl ? vEl.textContent : null;
+      let val = null;
+      if (t === 's') val = v == null ? null : wb.sst[+v];
+      else if (t === 'inlineStr') val = tags(c, 't').map(x => x.textContent).join('');
+      else if (t === 'str' || t === 'd') val = v;
+      else if (t === 'b') val = v === '1';
+      else if (t === 'e') val = null;
+      else val = v == null || v === '' ? null : Number(v);
+      cells[idx] = val;
+    }
+    cells.n = rn;
+    table.push(cells);
+  }
+  return table;
+}
+
+/* ===================== Odczyt CSV / wklejki ===================== */
+function parseDelimited(text){
+  text = text.replace(/^﻿/, '');
+  const first = text.split(/\r?\n/).find(l => l.trim()) || '';
+  const cnt = ch => first.split(ch).length - 1;
+  const delim = cnt('\t') > 0 ? '\t' : (cnt(';') >= cnt(',') && cnt(';') > 0 ? ';' : ',');
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) {
+      if (ch === '"') { if (text[i+1] === '"') { cell += '"'; i++; } else q = false; }
+      else cell += ch;
+    } else if (ch === '"' && cell === '') q = true;
+    else if (ch === delim) { row.push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i+1] === '\n') i++;
+      row.push(cell); rows.push(row); row = []; cell = '';
+    } else cell += ch;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  rows.forEach((r, i) => r.n = i + 1);
+  return rows;
+}
+
+/* ===================== Budowa rekordów ===================== */
+function findHeader(table){
+  let best = null;
+  for (let i = 0; i < Math.min(20, table.length); i++) {
+    const map = {}; let hits = 0;
+    (table[i] || []).forEach((h, c) => {
+      const key = normHeader(h); if (!key) return;
+      for (const [f, def] of Object.entries(FIELDS)) {
+        if (map[f] == null && def.aliases.includes(key)) { map[f] = c; hits++; break; }
+      }
+    });
+    if (hits >= 3 && (!best || hits > best.hits)) best = {index: i, map, hits};
+  }
+  return best;
+}
+function detectDecimalComma(table, start, map){
+  let comma = 0, dot = 0;
+  const cols = Object.entries(map).filter(([f]) => FIELDS[f].num).map(([, c]) => c);
+  for (let i = start; i < Math.min(table.length, start + 400); i++) for (const c of cols) {
+    const v = table[i]?.[c]; if (typeof v !== 'string') continue;
+    const s = v.replace(/[^0-9,.]/g,'');
+    if (/,\d{1,2}$/.test(s) || (/\./.test(s) && /,\d+$/.test(s))) comma++;
+    else if (/\.\d{1,2}$/.test(s) || (/,/.test(s) && /\.\d+$/.test(s))) dot++;
+  }
+  return comma >= dot; // przy braku sygnału: przecinek dziesiętny (zapis polski)
+}
+function detectCurrency(table, start){
+  const sample = table.slice(start, start + 50).flat().filter(v => typeof v === 'string').join(' ');
+  if (/zł|PLN/.test(sample)) return 'PLN';
+  if (/€|EUR/.test(sample)) return 'EUR';
+  if (/£|GBP/.test(sample)) return 'GBP';
+  return 'USD';
+}
+const close = (a, b) => Math.abs(a - b) <= Math.max(0.02, Math.abs(b) * 0.005);
+
+function buildDataset(table){
+  const h = findHeader(table);
+  if (!h) throw new Error('Nie znalazłem wiersza nagłówków. Arkusz powinien mieć kolumny takie jak Segment, Country, Product, Sales, Profit, Date.');
+  const {map} = h;
+  const dc = detectDecimalComma(table, h.index + 1, map);
+  const rows = [], badNum = [], badDate = [], monthMismatch = [];
+  for (let i = h.index + 1; i < table.length; i++) {
+    const r = table[i]; if (!r || r.every(isEmpty)) continue;
+    const o = {line: r.n || i + 1};
+    for (const f of ['segment','country','product','band','monthName']) {
+      const v = map[f] != null ? r[map[f]] : null;
+      o[f] = isEmpty(v) ? '(brak)' : String(v).trim();
+    }
+    for (const [f, def] of Object.entries(FIELDS)) {
+      if (!def.num) continue;
+      if (map[f] == null) { o[f] = null; continue; }
+      const raw = r[map[f]];
+      const n = parseNumber(raw, dc);
+      if (n == null && !isEmpty(raw)) badNum.push({line: o.line, field: def.label, raw: String(raw)});
+      o[f] = n;
+    }
+    const rawDate = map.date != null ? r[map.date] : null;
+    let d = parseDate(rawDate);
+    if (!d && !isEmpty(rawDate)) badDate.push({line: o.line, raw: String(rawDate)});
+    if (d && ((o.monthNum != null && o.monthNum !== d.getUTCMonth() + 1) || (o.year != null && o.year !== d.getUTCFullYear())))
+      monthMismatch.push({line: o.line, raw: `${pad2(d.getUTCDate())}.${pad2(d.getUTCMonth()+1)}.${d.getUTCFullYear()} vs ${o.monthNum ?? '?'}/${o.year ?? '?'}`});
+    o.y = d ? d.getUTCFullYear() : (o.year ?? null);
+    o.m = d ? d.getUTCMonth() + 1 : (o.monthNum ?? null);
+    o.ym = o.y && o.m ? `${o.y}-${pad2(o.m)}` : null;
+    o.yearKey = o.y ? String(o.y) : '(brak)';
+    // brakujące wartości liczone z pozostałych kolumn
+    if (o.gross == null && o.units != null && o.sprice != null) o.gross = o.units * o.sprice;
+    if (o.sales == null && o.gross != null) o.sales = o.gross - (o.discounts ?? 0);
+    if (o.profit == null && o.sales != null && o.cogs != null) o.profit = o.sales - o.cogs;
+    if (o.sales == null && o.profit == null && o.units == null) continue; // wiersz bez liczb, np. podsumowanie tekstowe
+    rows.push(o);
+  }
+  if (!rows.length) throw new Error('Arkusz nie zawiera wierszy z danymi pod nagłówkami.');
+  if (rows.every(o => o.sales == null)) throw new Error('Brak kolumny Sales (ani Gross Sales do jej wyliczenia).');
+
+  const has = (...fs) => fs.every(f => map[f] != null);
+  const check = (name, ok, fn) => {
+    if (!ok) return {name, skipped: true};
+    const bad = [];
+    for (const o of rows) { const res = fn(o); if (res && !close(res[1], res[0])) bad.push({line: o.line, expected: res[0], actual: res[1]}); }
+    return {name, bad};
+  };
+  const checks = [
+    check('Gross Sales = Units Sold × Sale Price', has('gross','units','sprice'), o => o.units != null && o.sprice != null && o.gross != null ? [o.units * o.sprice, o.gross] : null),
+    check('Sales = Gross Sales − Discounts', has('sales','gross','discounts'), o => o.gross != null && o.discounts != null && o.sales != null ? [o.gross - o.discounts, o.sales] : null),
+    check('Profit = Sales − COGS', has('profit','sales','cogs'), o => o.sales != null && o.cogs != null && o.profit != null ? [o.sales - o.cogs, o.profit] : null),
+  ];
+  const missing = ['segment','country','product','band','sales','cogs','profit','date'].filter(f => map[f] == null).map(f => FIELDS[f].label);
+  return {rows, checks, badNum, badDate, monthMismatch, missing, currency: detectCurrency(table, h.index + 1)};
+}
+
+/* ===================== Agregacja ===================== */
+const METRICS = ['units','gross','discounts','sales','cogs','profit'];
+function group(rows, key){
+  const m = new Map();
+  for (const o of rows) {
+    const k = o[key] ?? '(brak)';
+    let g = m.get(k);
+    if (!g) { g = {key: k, n: 0}; METRICS.forEach(x => g[x] = 0); m.set(k, g); }
+    g.n++; METRICS.forEach(x => g[x] += o[x] ?? 0);
+  }
+  const out = [...m.values()];
+  out.forEach(g => { g.margin = g.sales ? g.profit / g.sales : null; g.discRate = g.gross ? g.discounts / g.gross : null; });
+  return out;
+}
+function totals(rows){ return group(rows.map(o => ({...o, _all: 'all'})), '_all')[0] || {n:0, units:0, gross:0, discounts:0, sales:0, cogs:0, profit:0, margin:null, discRate:null}; }
+function bandRank(k){ const i = BAND_ORDER.indexOf(String(k).toLowerCase()); return i < 0 ? 99 : i; }
+
+/* ===================== Stan i renderowanie ===================== */
+const state = {data: null, filters: {}, pivotDim: 'segment', sort: {key: 'sales', dir: -1}, source: null, wb: null, sheet: 0, isSample: false};
+
+function filtered(){
+  return state.data.rows.filter(o => FILTER_DIMS.every(d => !state.filters[d] || (d === 'year' ? o.yearKey : o[d]) === state.filters[d]));
+}
+
+function renderStatus(err){
+  const el = $('status');
+  el.classList.toggle('error', !!err);
+  if (err) { el.innerHTML = `<span class="src">Nie udało się wczytać danych.</span><span>${esc(err)}</span>`; return; }
+  const d = state.data, problems = d.checks.reduce((a, c) => a + (c.bad ? c.bad.length : 0), 0) + d.badNum.length + d.badDate.length + d.monthMismatch.length;
+  const sheetSel = state.wb && state.wb.sheets.length > 1
+    ? `<label class="muted">Arkusz: <select id="sheetSel">${state.wb.sheets.map((s, i) => `<option value="${i}"${i === state.sheet ? ' selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>` : '';
+  el.innerHTML = `
+    ${state.isSample ? '<span class="chip warn">Dane przykładowe</span>' : ''}
+    <span class="src">${esc(state.source)}</span>
+    <span class="muted num">${plural(d.rows.length, 'wiersz', 'wiersze', 'wierszy')}</span>
+    ${sheetSel}
+    <span class="chip ${problems ? 'warn' : ''}">${problems ? `${plural(problems, 'uwaga', 'uwagi', 'uwag')} do danych` : 'Formuły się zgadzają'}</span>`;
+  const sel = $('sheetSel');
+  if (sel) sel.onchange = () => loadSheet(+sel.value).catch(e => renderStatus(e.message));
+}
+
+function renderFilters(){
+  const rows = state.data.rows;
+  $('filters').innerHTML = FILTER_DIMS.map(d => {
+    const key = d === 'year' ? 'yearKey' : d;
+    let vals = [...new Set(rows.map(o => o[key]))];
+    vals.sort(d === 'band' ? (a, b) => bandRank(a) - bandRank(b) || a.localeCompare(b) : (a, b) => String(a).localeCompare(String(b), 'pl'));
+    if (state.filters[d] && !vals.includes(state.filters[d])) state.filters[d] = '';
+    return `<label for="f-${d}">${DIMS[d]}<select id="f-${d}" data-dim="${d}"><option value="">Wszystkie</option>${vals.map(v => `<option${state.filters[d] === v ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select></label>`;
+  }).join('') + '<button class="btn" id="resetF" type="button">Wyczyść filtry</button>';
+  $('filters').querySelectorAll('select').forEach(s => s.onchange = () => { state.filters[s.dataset.dim] = s.value; renderAnalysis(); });
+  $('resetF').onclick = () => { state.filters = {}; renderFilters(); renderAnalysis(); };
+}
+
+function renderKpis(rows){
+  const t = totals(rows);
+  const tile = (k, v, s, cls = '') => `<div class="kpi"><span class="k">${k}</span><span class="v ${cls}">${v}</span><span class="s">${s}</span></div>`;
+  $('kpis').innerHTML = [
+    tile('Sprzedaż netto', money(t.sales, {compact: true}), plural(t.n, 'transakcja', 'transakcje', 'transakcji')),
+    tile('Zysk', money(t.profit, {compact: true}), `marża ${pct(t.margin)}`, t.profit < 0 ? 'neg' : ''),
+    tile('Rabaty', money(t.discounts, {compact: true}), `${pct(t.discRate)} sprzedaży brutto`),
+    tile('Koszt (COGS)', money(t.cogs, {compact: true}), `${pct(t.sales ? t.cogs / t.sales : null)} sprzedaży netto`),
+    tile('Sprzedane sztuki', units(t.units), t.units ? `śr. ${money(t.sales / t.units)} za sztukę` : '–'),
+  ].join('');
+}
+
+function niceStep(range, count){
+  const raw = range / count, p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
+}
+let trendData = [];
+function renderTrend(rows){
+  trendData = group(rows.filter(o => o.ym), 'ym').sort((a, b) => a.key.localeCompare(b.key));
+  drawTrend();
+}
+function drawTrend(){
+  const el = $('trend');
+  if (!trendData.length) { el.innerHTML = '<p class="empty">Brak dat w danych. Dodaj kolumnę Date albo Month Number i Year.</p>'; return; }
+  const W = Math.max(300, el.clientWidth || 700), H = W < 500 ? 230 : 280;
+  const m = {l: 64, r: 12, t: 12, b: 34}, pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const vmax = Math.max(0, ...trendData.map(g => Math.max(g.sales, g.profit)));
+  const vmin = Math.min(0, ...trendData.map(g => g.profit));
+  const step = niceStep((vmax - vmin) || 1, 4);
+  const lo = Math.floor(vmin / step) * step, hi = Math.ceil(vmax / step) * step || step;
+  const y = v => m.t + ph - (v - lo) / (hi - lo) * ph;
+  const bw = pw / trendData.length, x = i => m.l + bw * i + bw / 2;
+  const ticks = []; for (let v = lo; v <= hi + step / 2; v += step) ticks.push(v);
+  const every = Math.ceil(trendData.length * 52 / pw);
+  const axisFmt = v => money(v, {compact: true}).replace(/\s?USD|\s?PLN|\s?EUR|\s?GBP/, '');
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Sprzedaż netto i zysk w kolejnych miesiącach">`;
+  s += '<g class="grid axis">' + ticks.map(v => `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}"/><text x="${m.l - 8}" y="${y(v) + 4}" text-anchor="end">${axisFmt(v)}</text>`).join('') + '</g>';
+  s += `<rect class="hover" id="hoverBand" x="0" y="${m.t}" width="${bw}" height="${ph}" visibility="hidden"/>`;
+  s += '<g class="bars">' + trendData.map((g, i) => { const top = y(Math.max(0, g.sales)), h = Math.abs(y(g.sales) - y(0)); return `<rect x="${x(i) - bw * 0.34}" y="${top}" width="${bw * 0.68}" height="${Math.max(h, 0.5)}" rx="2"/>`; }).join('') + '</g>';
+  if (lo < 0) s += `<line class="zero" x1="${m.l}" x2="${W - m.r}" y1="${y(0)}" y2="${y(0)}"/>`;
+  s += `<polyline class="pline" points="${trendData.map((g, i) => `${x(i)},${y(g.profit)}`).join(' ')}"/>`;
+  s += trendData.map((g, i) => `<circle class="pdot${i === trendData.length - 1 ? ' last' : ''}" cx="${x(i)}" cy="${y(g.profit)}" r="${trendData.length > 30 ? 2 : 3.5}"/>`).join('');
+  s += '<g class="axis">' + trendData.map((g, i) => {
+    if (i % every) return '';
+    const [yy, mm] = g.key.split('-');
+    const lbl = MONTHS[+mm - 1] + (i === 0 || mm === '01' ? ' ' + yy.slice(2) : '');
+    return `<text x="${x(i)}" y="${H - 12}" text-anchor="middle">${lbl}</text>`;
+  }).join('') + '</g></svg><div class="tip" id="tip" hidden></div>';
+  el.innerHTML = s;
+  const svg = el.querySelector('svg'), tip = $('tip'), band = $('hoverBand');
+  const move = e => {
+    const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) * W / r.width;
+    const i = Math.floor((px - m.l) / bw);
+    if (i < 0 || i >= trendData.length) { tip.hidden = true; band.setAttribute('visibility', 'hidden'); return; }
+    const g = trendData[i];
+    band.setAttribute('x', m.l + bw * i); band.setAttribute('visibility', 'visible');
+    tip.innerHTML = `<b>${ymLabel(g.key)}</b><br>Sprzedaż: ${money(g.sales)}<br>Zysk: ${money(g.profit)}<br>Marża: ${pct(g.margin)}`;
+    tip.hidden = false;
+    const tx = (x(i) / W) * r.width, tw = tip.offsetWidth;
+    tip.style.left = Math.min(Math.max(tx, tw / 2), r.width - tw / 2) + 'px';
+    tip.style.top = Math.max((y(Math.max(g.sales, g.profit)) / H) * r.height - 8, tip.offsetHeight) + 'px';
+  };
+  svg.addEventListener('pointermove', move);
+  svg.addEventListener('pointerdown', move);
+  svg.addEventListener('pointerleave', () => { tip.hidden = true; band.setAttribute('visibility', 'hidden'); });
+}
+
+function renderBars(el, items, valueKey, subFn){
+  if (!items.length) { el.innerHTML = '<p class="empty">Brak danych.</p>'; return; }
+  const vals = items.map(g => g[valueKey]);
+  const max = Math.max(0, ...vals), min = Math.min(0, ...vals), range = (max - min) || 1, zero = -min / range * 100;
+  el.innerHTML = items.map(g => {
+    const v = g[valueKey], left = v >= 0 ? zero : zero + v / range * 100, w = Math.abs(v) / range * 100;
+    return `<div class="bar-row"><span class="bar-label" title="${esc(g.key)}">${esc(g.key)}</span>
+      <div class="bar-track"><i class="${v < 0 ? 'n' : ''}" style="left:${left}%;width:${Math.max(w, 0.4)}%"></i>${min < 0 ? `<b style="left:${zero}%"></b>` : ''}</div>
+      <span class="bar-val ${v < 0 ? 'neg' : ''}">${money(v, {compact: true})}</span>
+      <span class="bar-sub">${subFn(g)}</span></div>`;
+  }).join('');
+}
+
+function renderBands(rows){
+  const g = group(rows, 'band').sort((a, b) => bandRank(a.key) - bandRank(b.key) || String(a.key).localeCompare(b.key));
+  const maxM = Math.max(0.0001, ...g.map(x => Math.abs(x.margin ?? 0)));
+  $('byBand').innerHTML = `<thead><tr><th>Przedział</th><th>Sprzedaż</th><th>Rabat</th><th>Marża</th></tr></thead><tbody>` +
+    g.map(x => `<tr><td>${esc(x.key)}</td><td>${money(x.sales, {compact: true})}</td><td>${pct(x.discRate)}</td>
+      <td class="${(x.margin ?? 0) < 0 ? 'neg' : ''}">${pct(x.margin)}<span class="mbar ${(x.margin ?? 0) < 0 ? 'n' : ''}" style="width:${Math.abs(x.margin ?? 0) / maxM * 48}px"></span></td></tr>`).join('') + '</tbody>';
+}
+
+function renderInsights(rows){
+  const out = [], t = totals(rows);
+  const big = g => g.key !== '(brak)' && (!t.sales || Math.abs(g.sales) >= Math.abs(t.sales) * 0.01);
+  if (!rows.length) { $('insights').innerHTML = '<li>Brak wierszy dla wybranych filtrów.</li>'; return; }
+  const seg = group(rows, 'segment').filter(big);
+  if (seg.length > 1) {
+    const best = [...seg].sort((a, b) => b.profit - a.profit)[0];
+    const worst = [...seg].filter(g => g.sales > 0).sort((a, b) => a.margin - b.margin)[0];
+    out.push(`Najwięcej zysku daje segment <b>${esc(best.key)}</b>: ${money(best.profit, {compact: true})}, ${t.profit > 0 && best.profit <= t.profit ? `czyli ${pct(best.profit / t.profit)} całego zysku, ` : ''}przy marży ${pct(best.margin)}.`);
+    if (worst && worst.key !== best.key) out.push(`Najniższą marżę ma <b>${esc(worst.key)}</b> (${pct(worst.margin)})${worst.profit < 0 ? ` i przynosi stratę ${money(worst.profit, {compact: true})}` : ''}.`);
+  }
+  const ctry = group(rows, 'country').filter(big).sort((a, b) => b.sales - a.sales);
+  if (ctry.length > 1) out.push(`Największy rynek to <b>${esc(ctry[0].key)}</b> z ${pct(t.sales ? ctry[0].sales / t.sales : null)} sprzedaży netto; najmniejszy to ${esc(ctry[ctry.length - 1].key)} (${pct(t.sales ? ctry[ctry.length - 1].sales / t.sales : null)}).`);
+  const bands = group(rows, 'band').filter(g => big(g) && g.gross > 0 && g.sales > 0 && g.discRate >= 0 && g.discRate < 1).sort((a, b) => a.discRate - b.discRate);
+  if (bands.length > 1) {
+    const lo = bands[0], hi = bands[bands.length - 1];
+    const diff = (hi.margin - lo.margin) * 100;
+    out.push(`Przy rabacie <b>${esc(hi.key)}</b> (średnio ${pct(hi.discRate)}) marża wynosi ${pct(hi.margin)}, a przy <b>${esc(lo.key)}</b> (${pct(lo.discRate)}) ${pct(lo.margin)}. Różnica to ${nf1.format(Math.abs(diff))} pkt proc. ${diff < 0 ? 'na niekorzyść wyższych rabatów' : 'na korzyść wyższych rabatów'}.`);
+  }
+  const prod = group(rows, 'product').filter(big).sort((a, b) => b.profit - a.profit);
+  if (prod.length > 1) out.push(`Najbardziej zyskowny produkt to <b>${esc(prod[0].key)}</b> (${money(prod[0].profit, {compact: true})}), najmniej: ${esc(prod[prod.length - 1].key)} (${money(prod[prod.length - 1].profit, {compact: true})}).`);
+  if (trendData.length > 1) {
+    const top = [...trendData].sort((a, b) => b.sales - a.sales)[0];
+    out.push(`Najlepszy miesiąc pod względem sprzedaży: <b>${ymLabel(top.key)}</b> (${money(top.sales, {compact: true})}).`);
+  }
+  $('insights').innerHTML = out.length ? out.map(s => `<li>${s}</li>`).join('') : '<li>Za mało zróżnicowane dane, by wyciągnąć wnioski.</li>';
+}
+
+const PIVOT_COLS = [
+  {key: 'key', label: 'Wiersz'}, {key: 'n', label: 'Transakcje', fmt: v => nf0.format(v)},
+  {key: 'units', label: 'Sztuki', fmt: units}, {key: 'gross', label: 'Brutto', fmt: v => money(v)},
+  {key: 'discounts', label: 'Rabaty', fmt: v => money(v)}, {key: 'sales', label: 'Sprzedaż', fmt: v => money(v)},
+  {key: 'cogs', label: 'COGS', fmt: v => money(v)}, {key: 'profit', label: 'Zysk', fmt: v => money(v)},
+  {key: 'margin', label: 'Marża', fmt: pct},
+];
+let pivotRows = [];
+function renderPivot(rows){
+  const dim = state.pivotDim;
+  pivotRows = group(rows, dim === 'year' ? 'yearKey' : dim);
+  const {key, dir} = state.sort;
+  pivotRows.sort((a, b) => {
+    if (key === 'key') {
+      if (dim === 'band') return (bandRank(a.key) - bandRank(b.key) || String(a.key).localeCompare(b.key)) * dir;
+      return String(a.key).localeCompare(String(b.key), 'pl', {numeric: true}) * dir;
+    }
+    return ((a[key] ?? -Infinity) - (b[key] ?? -Infinity)) * dir;
+  });
+  const t = totals(rows);
+  const label = k => dim === 'ym' && k !== '(brak)' ? ymLabel(k) : k;
+  $('pivot').innerHTML =
+    `<thead><tr>${PIVOT_COLS.map(c => `<th><button type="button" data-sort="${c.key}"${key === c.key ? ` aria-sort="${dir > 0 ? 'ascending' : 'descending'}"` : ''}>${c.key === 'key' ? DIMS[dim] : c.label}${key === c.key ? (dir > 0 ? ' ↑' : ' ↓') : ''}</button></th>`).join('')}</tr></thead>
+    <tbody>${pivotRows.map(g => `<tr>${PIVOT_COLS.map(c => c.key === 'key' ? `<td>${esc(label(g.key))}</td>` : `<td class="${(c.key === 'profit' || c.key === 'margin') && g[c.key] < 0 ? 'neg' : ''}">${c.fmt(g[c.key])}</td>`).join('')}</tr>`).join('')}</tbody>
+    <tfoot><tr>${PIVOT_COLS.map(c => c.key === 'key' ? '<td>Razem</td>' : `<td>${c.fmt(t[c.key])}</td>`).join('')}</tr></tfoot>`;
+  $('pivot').querySelectorAll('[data-sort]').forEach(b => b.onclick = () => {
+    const k = b.dataset.sort;
+    state.sort = state.sort.key === k ? {key: k, dir: -state.sort.dir} : {key: k, dir: k === 'key' ? 1 : -1};
+    renderPivot(filtered());
+  });
+}
+
+function renderChecks(){
+  const d = state.data, items = [], examples = [];
+  for (const c of d.checks) {
+    if (c.skipped) { items.push(`<li><span class="chip">pominięto</span><span>${esc(c.name)}</span><span class="d">Brak potrzebnych kolumn.</span></li>`); continue; }
+    const n = c.bad.length;
+    items.push(`<li><span class="chip ${n ? 'warn' : ''}">${n ? plural(n, 'różnica', 'różnice', 'różnic') : 'OK'}</span><span>${esc(c.name)}</span><span class="d">${n ? `Wiersze z odchyleniem powyżej 0,5%.` : `Zgadza się we wszystkich wierszach (${nf0.format(d.rows.length)}).`}</span></li>`);
+    c.bad.slice(0, 5).forEach(b => examples.push([b.line, c.name, money(b.expected), money(b.actual)]));
+  }
+  const list = (arr, name, desc) => items.push(`<li><span class="chip ${arr.length ? 'bad' : ''}">${arr.length ? nf0.format(arr.length) : 'OK'}</span><span>${name}</span><span class="d">${arr.length ? desc + ' Np. wiersz ' + arr.slice(0, 3).map(x => `${x.line}${x.field ? ' (' + esc(x.field) + ')' : ''}: „${esc(x.raw)}”`).join(', ') : 'Brak problemów.'}</span></li>`);
+  list(d.badNum, 'Nieczytelne liczby', 'Te komórki potraktowano jako puste.');
+  list(d.badDate, 'Nieczytelne daty', 'Oczekiwany format: dd.mm.rrrr, rrrr-mm-dd lub data Excela.');
+  list(d.monthMismatch, 'Month Number / Year niezgodne z Date', 'Analiza używa kolumny Date.');
+  if (d.missing.length) items.push(`<li><span class="chip warn">brak</span><span>Brakujące kolumny</span><span class="d">${d.missing.map(esc).join(', ')}. Część analiz będzie niepełna.</span></li>`);
+  $('checks').innerHTML = items.join('');
+  $('examplesWrap').innerHTML = examples.length ? `<table class="examples"><thead><tr><th>Wiersz Excela</th><th>Reguła</th><th>Oczekiwano</th><th>Jest</th></tr></thead><tbody>${examples.map(r => `<tr><td>${r[0]}</td><td style="text-align:left">${esc(r[1])}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join('')}</tbody></table>` : '';
+}
+
+function renderAnalysis(){
+  const rows = filtered();
+  renderKpis(rows);
+  renderTrend(rows);
+  renderInsights(rows);
+  const t = totals(rows);
+  renderBars($('bySegment'), group(rows, 'segment').sort((a, b) => b.profit - a.profit), 'profit', g => `marża ${pct(g.margin)}`);
+  renderBars($('byCountry'), group(rows, 'country').sort((a, b) => b.sales - a.sales), 'sales', g => `${pct(t.sales ? g.sales / t.sales : null)} sprzedaży · marża ${pct(g.margin)}`);
+  renderBars($('byProduct'), group(rows, 'product').sort((a, b) => b.profit - a.profit), 'profit', g => `marża ${pct(g.margin)} · ${units(g.units)} szt.`);
+  renderBands(rows);
+  renderPivot(rows);
+}
+
+function setData(data, source, isSample){
+  state.data = data; state.source = source; state.isSample = isSample; state.filters = {};
+  CURRENCY = data.currency;
+  renderStatus(); renderFilters(); renderChecks(); renderAnalysis();
+}
+
+/* ===================== Wczytywanie ===================== */
+async function loadSheet(idx){
+  state.sheet = idx;
+  const table = await readSheet(state.wb, idx);
+  setData(buildDataset(table), `${state.wb.fileName} · ${state.wb.sheets[idx].name}`, false);
+}
+async function handleFile(file){
+  if (!file) return;
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  try {
+    $('status').innerHTML = `<span class="muted">Wczytuję ${esc(file.name)}…</span>`;
+    if (ext === 'xls') throw new Error('Stary format .xls nie jest obsługiwany. W Excelu wybierz Plik → Zapisz jako → Skoroszyt programu Excel (.xlsx).');
+    if (ext === 'xlsx' || ext === 'xlsm') {
+      const wb = await readWorkbook(await file.arrayBuffer());
+      if (!wb.sheets.length) throw new Error('Skoroszyt nie ma arkuszy.');
+      wb.fileName = file.name;
+      state.wb = wb;
+      // pierwszy arkusz, w którym da się znaleźć nagłówki
+      let lastErr;
+      for (let i = 0; i < wb.sheets.length; i++) {
+        try { await loadSheet(i); return; } catch (e) { lastErr = e; }
+      }
+      throw lastErr;
+    }
+    state.wb = null;
+    const buf = await file.arrayBuffer();
+    let text = new TextDecoder('utf-8').decode(buf);
+    if (text.includes('�')) { try { text = new TextDecoder('windows-1250').decode(buf); } catch {} }
+    setData(buildDataset(parseDelimited(text)), file.name, false);
+  } catch (e) {
+    console.error(e);
+    renderStatus(e.message || String(e));
+  }
+}
+
+/* ===================== Dane przykładowe ===================== */
+function sampleData(){
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  const segs = {
+    'Government': [[7, 3.5], [20, 10], [350, 280]], 'Midmarket': [[15, 10]], 'Channel Partners': [[12, 3]],
+    'Enterprise': [[125, 120]], 'Small Business': [[300, 250]],
+  };
+  const countries = ['Canada', 'Germany', 'France', 'Mexico', 'United States of America'];
+  const products = {Carretera: 3, Montana: 5, Paseo: 10, Velo: 120, VTT: 250, Amarilla: 260};
+  const bands = [['None', 0, 0], ['Low', 0.01, 0.03], ['Medium', 0.04, 0.07], ['High', 0.08, 0.15]];
+  const head = ['Segment', 'Country', ' Product ', ' Discount Band ', 'Units Sold', ' Manufacturing Price ', ' Sale Price ', ' Gross Sales ', ' Discounts ', '  Sales ', ' COGS ', ' Profit ', 'Date', 'Month Number', ' Month Name ', 'Year'];
+  const names = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const table = [head]; table[0].n = 1;
+  const r2 = v => Math.round(v * 100) / 100;
+  for (let i = 0; i < 420; i++) {
+    const seg = pick(Object.keys(segs)), [price, cost] = pick(segs[seg]);
+    const prod = pick(Object.keys(products)), band = pick(bands);
+    const u = Math.round((300 + rnd() * 2700) * 2) / 2;
+    const rate = band[1] + rnd() * (band[2] - band[1]);
+    const gross = r2(u * price), disc = r2(gross * rate), sales = r2(gross - disc), cogs = r2(u * cost);
+    const mi = Math.floor(rnd() * 16), y = mi < 4 ? 2013 : 2014, m = mi < 4 ? 9 + mi : mi - 3;
+    const row = [seg, pick(countries), prod, band[0], u, products[prod], price, gross, disc, sales, cogs, r2(sales - cogs), `01.${pad2(m)}.${y}`, m, names[m - 1], y];
+    row.n = i + 2; table.push(row);
+  }
+  return table;
+}
+function loadSample(){
+  state.wb = null;
+  setData(buildDataset(sampleData()), 'Przykład: 420 transakcji, wrz 2013 – gru 2014', true);
+}
+
+/* ===================== Zdarzenia ===================== */
+$('pick').onclick = () => $('file').click();
+$('file').onchange = e => { handleFile(e.target.files[0]); e.target.value = ''; };
+$('sample').onclick = loadSample;
+$('pasteGo').onclick = () => {
+  const text = $('pasteText').value;
+  if (!text.trim()) { renderStatus('Pole wklejania jest puste. Skopiuj zakres z Excela razem z nagłówkami.'); return; }
+  try { state.wb = null; setData(buildDataset(parseDelimited(text)), 'Dane wklejone z Excela', false); $('pasteBox').open = false; }
+  catch (e) { renderStatus(e.message); }
+};
+$('pivotDim').innerHTML = Object.entries(DIMS).map(([k, v]) => `<option value="${k}"${k === state.pivotDim ? ' selected' : ''}>${v}</option>`).join('');
+$('pivotDim').onchange = e => { state.pivotDim = e.target.value; state.sort = e.target.value === 'ym' ? {key: 'key', dir: 1} : {key: 'sales', dir: -1}; renderPivot(filtered()); };
+$('copyPivot').onclick = async () => {
+  const dec = v => v == null || !isFinite(v) ? '' : String(Math.round(v * 100) / 100).replace('.', ',');
+  const lines = [[DIMS[state.pivotDim], 'Transakcje', 'Sztuki', 'Brutto', 'Rabaty', 'Sprzedaż', 'COGS', 'Zysk', 'Marża %'].join('\t')];
+  for (const g of pivotRows) lines.push([state.pivotDim === 'ym' ? ymLabel(g.key) : g.key, g.n, dec(g.units), dec(g.gross), dec(g.discounts), dec(g.sales), dec(g.cogs), dec(g.profit), dec(g.margin == null ? null : g.margin * 100)].join('\t'));
+  const text = lines.join('\n');
+  try { await navigator.clipboard.writeText(text); $('copyMsg').textContent = 'Skopiowano. Wklej w Excelu.'; }
+  catch { $('pasteText').value = text; $('pasteBox').open = true; $('pasteText').select(); $('copyMsg').textContent = 'Schowek zablokowany. Tabela jest zaznaczona w polu poniżej, skopiuj ją ręcznie.'; }
+  setTimeout(() => $('copyMsg').textContent = '', 4000);
+};
+let dragDepth = 0;
+addEventListener('dragenter', e => { if (e.dataTransfer?.types?.includes('Files')) { dragDepth++; $('drop').hidden = false; } });
+addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('drop').hidden = true; } });
+addEventListener('dragover', e => e.preventDefault());
+addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; $('drop').hidden = true; handleFile(e.dataTransfer.files[0]); });
+let rz, lastW = 0; new ResizeObserver(() => { const w = $('trend').clientWidth; if (w === lastW) return; lastW = w; clearTimeout(rz); rz = setTimeout(() => state.data && drawTrend(), 80); }).observe($('trend'));
+
+loadSample();
+</script>
+</body>
+</html>
